@@ -120,7 +120,6 @@ a {
 }
 
 .desktop-nav a,
-.role-switch button,
 .ghost-action,
 .secondary-action {
   border: 1px solid rgba(148, 163, 184, 0.18);
@@ -144,29 +143,54 @@ a {
   background: rgba(37, 99, 235, 0.13);
 }
 
-.role-switch {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  width: min(300px, 100%);
-  padding: 4px;
+.auth-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: min(300px, 100%);
+}
+
+.auth-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
   border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 10px;
+  border-radius: 8px;
   background: rgba(2, 6, 23, 0.84);
-}
-
-.role-switch button {
-  min-height: 36px;
-  border-color: transparent;
-  background: transparent;
-  cursor: pointer;
+  color: var(--muted-strong);
+  padding: 0 11px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 900;
+  text-decoration: none;
 }
 
-.role-switch button.active {
-  background: var(--blue);
+.auth-chip.admin {
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(37, 99, 235, 0.15);
+  color: #dbeafe;
+}
+
+.auth-chip.staff {
+  border-color: rgba(16, 185, 129, 0.42);
+  background: rgba(16, 185, 129, 0.13);
+  color: #d1fae5;
+}
+
+.auth-chip button {
+  min-height: 30px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.74);
   color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 0 9px;
+}
+
+.auth-panel {
+  min-height: 320px;
 }
 
 .hero-section {

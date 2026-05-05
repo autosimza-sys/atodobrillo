@@ -34,7 +34,10 @@ const roleUsers = {
 const supabaseClient = createSupabaseClient();
 
 const ui = {
-  currentRole: "admin",
+  currentRole: "client",
+  authUser: null,
+  staffProfile: null,
+  authReady: false,
   bookingStep: 1,
   booking: {
     clientName: "",
@@ -54,17 +57,10 @@ const ui = {
 let state = loadStore();
 
 renderAll();
+initializeAuth();
 hydrateSupabaseStore();
 
 document.addEventListener("click", (event) => {
-  const roleButton = event.target.closest("[data-role]");
-  if (roleButton) {
-    ui.currentRole = roleButton.dataset.role;
-    showToast(`Vista cambiada a rol ${roleButton.textContent.trim()}.`);
-    renderAll();
-    return;
-  }
-
   const actionButton = event.target.closest("[data-action]");
   if (!actionButton) return;
 
@@ -90,6 +86,7 @@ document.addEventListener("click", (event) => {
   if (action === "redeem-loyalty") redeemLoyalty(id);
   if (action === "delete-expense") deleteExpense(id);
   if (action === "seed-demo") addDemoAppointment();
+  if (action === "logout") logoutStaff();
 });
 
 document.addEventListener("input", (event) => {
@@ -130,6 +127,10 @@ document.addEventListener("submit", (event) => {
     ui.clientLookupPhone = String(form.get("phone") || "");
     renderLoyalty();
   }
+
+  if (event.target.id === "staff-login-form") {
+    loginStaff(new FormData(event.target));
+  }
 });
 
 function loadStore() {
@@ -147,7 +148,6 @@ function loadStore() {
 
 function saveStore() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  queueSupabaseSync();
 }
 
 function seedStore() {
@@ -342,11 +342,11 @@ async function hydrateSupabaseStore() {
 
   try {
     showToast("Conectando con Supabase...");
-    const remoteState = await fetchSupabaseState();
+    const remoteState = await fetchSupabaseState(isStaffOrAdmin());
     const hasRemoteData = remoteState.services.length || remoteState.users.length || remoteState.appointments.length || remoteState.expenses.length;
 
     if (!hasRemoteData) {
-      await syncFullStateToSupabase();
+      if (isAdmin()) await syncFullStateToSupabase();
       showToast("Supabase conectado. Se cargaron datos demo iniciales.");
       return;
     }
@@ -360,24 +360,31 @@ async function hydrateSupabaseStore() {
   }
 }
 
-async function fetchSupabaseState() {
-  const [
-    settingsResult,
-    servicesResult,
-    usersResult,
-    appointmentsResult,
-    expensesResult,
-    loyaltyEventsResult,
-    notificationsResult,
-  ] = await Promise.all([
-    supabaseClient.from("settings").select("*").eq("id", "business").maybeSingle(),
-    supabaseClient.from("services").select("*").order("sort_order", { ascending: true }),
-    supabaseClient.from("users").select("*"),
-    supabaseClient.from("appointments").select("*").order("scheduled_at", { ascending: true }),
-    supabaseClient.from("expenses").select("*").order("expense_date", { ascending: false }),
-    supabaseClient.from("loyalty_events").select("*").order("created_at", { ascending: false }),
-    supabaseClient.from("notifications").select("*").order("created_at", { ascending: false }),
-  ]);
+async function fetchSupabaseState(includeInternal = false) {
+  const settingsResult = await supabaseClient.from("settings").select("*").eq("id", "business").maybeSingle();
+  const servicesResult = await supabaseClient.from("services").select("*").order("sort_order", { ascending: true });
+
+  let usersResult = { data: [], error: null };
+  let appointmentsResult = { data: [], error: null };
+  let expensesResult = { data: [], error: null };
+  let loyaltyEventsResult = { data: [], error: null };
+  let notificationsResult = { data: [], error: null };
+
+  if (includeInternal) {
+    [
+      usersResult,
+      appointmentsResult,
+      expensesResult,
+      loyaltyEventsResult,
+      notificationsResult,
+    ] = await Promise.all([
+      supabaseClient.from("users").select("*"),
+      supabaseClient.from("appointments").select("*").order("scheduled_at", { ascending: true }),
+      supabaseClient.from("expenses").select("*").order("expense_date", { ascending: false }),
+      supabaseClient.from("loyalty_events").select("*").order("created_at", { ascending: false }),
+      supabaseClient.from("notifications").select("*").order("created_at", { ascending: false }),
+    ]);
+  }
 
   const results = [settingsResult, servicesResult, usersResult, appointmentsResult, expensesResult, loyaltyEventsResult, notificationsResult];
   const firstError = results.find((result) => result.error)?.error;
@@ -386,22 +393,12 @@ async function fetchSupabaseState() {
   return {
     settings: settingsFromRow(settingsResult.data) || state.settings,
     services: (servicesResult.data || []).map(serviceFromRow),
-    users: (usersResult.data || []).map(userFromRow),
-    appointments: (appointmentsResult.data || []).map(appointmentFromRow),
-    expenses: (expensesResult.data || []).map(expenseFromRow),
-    loyaltyEvents: (loyaltyEventsResult.data || []).map(loyaltyEventFromRow),
-    notifications: (notificationsResult.data || []).map(notificationFromRow),
+    users: includeInternal ? (usersResult.data || []).map(userFromRow) : [],
+    appointments: includeInternal ? (appointmentsResult.data || []).map(appointmentFromRow) : [],
+    expenses: includeInternal ? (expensesResult.data || []).map(expenseFromRow) : [],
+    loyaltyEvents: includeInternal ? (loyaltyEventsResult.data || []).map(loyaltyEventFromRow) : [],
+    notifications: includeInternal ? (notificationsResult.data || []).map(notificationFromRow) : [],
   };
-}
-
-function queueSupabaseSync() {
-  if (!supabaseClient) return;
-  clearTimeout(ui.syncTimer);
-  ui.syncTimer = setTimeout(() => {
-    syncFullStateToSupabase().catch((error) => {
-      showToast(`No se pudo sincronizar con Supabase. ${error.message || ""}`);
-    });
-  }, 450);
 }
 
 async function syncFullStateToSupabase() {
@@ -426,6 +423,129 @@ async function deleteSupabaseRow(table, idColumn, id) {
 async function assertSupabaseResult(request) {
   const { error } = await request;
   if (error) throw error;
+}
+
+async function initializeAuth() {
+  if (!supabaseClient) {
+    ui.authReady = true;
+    renderAll();
+    return;
+  }
+
+  const { data } = await supabaseClient.auth.getSession();
+  await applySession(data.session);
+
+  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+    await applySession(session);
+  });
+}
+
+async function applySession(session) {
+  ui.authUser = session?.user || null;
+  ui.staffProfile = null;
+  ui.currentRole = "client";
+
+  if (ui.authUser) {
+    ui.staffProfile = await fetchStaffProfile(ui.authUser.id);
+
+    if (!ui.staffProfile?.isActive) {
+      showToast("Tu usuario no tiene permiso interno activo.");
+      await supabaseClient.auth.signOut();
+      ui.authUser = null;
+      ui.staffProfile = null;
+    } else {
+      ui.currentRole = ui.staffProfile.role;
+      await hydrateSupabaseStore();
+    }
+  }
+
+  ui.authReady = true;
+  renderAll();
+}
+
+async function fetchStaffProfile(userId) {
+  const { data, error } = await supabaseClient
+    .from("staff_profiles")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (error) {
+    showToast(`No se pudo leer el perfil interno: ${error.message}`);
+    return null;
+  }
+
+  if (!data) return null;
+
+  return {
+    userId: data.user_id,
+    email: data.email,
+    displayName: data.display_name,
+    role: data.role,
+    isActive: data.is_active,
+  };
+}
+
+async function loginStaff(form) {
+  if (!supabaseClient) {
+    showToast("Primero conecta Supabase para usar login.");
+    return;
+  }
+
+  const email = String(form.get("email") || "").trim();
+  const password = String(form.get("password") || "");
+
+  if (!email || !password) {
+    showToast("Ingresa email y contrasena.");
+    return;
+  }
+
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) {
+    showToast(`No se pudo ingresar: ${error.message}`);
+    return;
+  }
+
+  showToast("Ingreso correcto.");
+}
+
+async function logoutStaff() {
+  if (!supabaseClient) return;
+  await supabaseClient.auth.signOut();
+  ui.authUser = null;
+  ui.staffProfile = null;
+  ui.currentRole = "client";
+  await hydrateSupabaseStore();
+  showToast("Sesion cerrada.");
+  renderAll();
+}
+
+function persistPublicBooking(user, appointment) {
+  if (!supabaseClient) return;
+
+  (async () => {
+    const userResult = await supabaseClient.from("users").insert(userToRow(user));
+    if (userResult.error && userResult.error.code !== "23505") throw userResult.error;
+
+    await assertSupabaseResult(supabaseClient.from("appointments").insert(appointmentToRow(appointment)));
+  })().catch((error) => showToast(`No se pudo guardar en Supabase: ${error.message || ""}`));
+}
+
+function syncOperationalStateToSupabase() {
+  if (!supabaseClient || !isStaffOrAdmin()) return;
+
+  Promise.all([
+    state.users.length ? assertSupabaseResult(supabaseClient.from("users").upsert(state.users.map(userToRow), { onConflict: "uid" })) : null,
+    state.appointments.length ? assertSupabaseResult(supabaseClient.from("appointments").upsert(state.appointments.map(appointmentToRow), { onConflict: "id" })) : null,
+    state.loyaltyEvents.length ? assertSupabaseResult(supabaseClient.from("loyalty_events").upsert(state.loyaltyEvents.map(loyaltyEventToRow), { onConflict: "id" })) : null,
+    state.notifications.length ? assertSupabaseResult(supabaseClient.from("notifications").upsert(state.notifications.map(notificationToRow), { onConflict: "id" })) : null,
+  ]).catch((error) => showToast(`No se pudo sincronizar operacion: ${error.message || ""}`));
+}
+
+function syncAdminStateToSupabase() {
+  if (!supabaseClient || !isAdmin()) return;
+  syncFullStateToSupabase().catch((error) => showToast(`No se pudo sincronizar admin: ${error.message || ""}`));
 }
 
 function settingsFromRow(row) {
@@ -665,7 +785,8 @@ function notificationToRow(notification) {
 }
 
 function renderAll() {
-  renderRoleSwitch();
+  renderAuthStatus();
+  renderStaffLogin();
   renderHeroMetrics();
   renderBooking();
   renderOperations();
@@ -677,10 +798,63 @@ function renderAll() {
   refreshIcons();
 }
 
-function renderRoleSwitch() {
-  document.querySelectorAll("[data-role]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.role === ui.currentRole);
-  });
+function renderAuthStatus() {
+  const container = document.getElementById("auth-status");
+  if (!container) return;
+
+  if (isStaffOrAdmin()) {
+    const profile = ui.staffProfile || currentUser();
+    container.innerHTML = `
+      <span class="auth-chip ${ui.currentRole}">
+        ${escapeHtml(profile.displayName || profile.email || "Usuario")}
+        <small>${ui.currentRole}</small>
+        <button type="button" data-action="logout">Salir</button>
+      </span>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <a class="auth-chip" href="#ingreso">
+      <i data-lucide="lock-keyhole"></i>
+      Ingreso staff
+    </a>
+  `;
+}
+
+function renderStaffLogin() {
+  const form = document.getElementById("staff-login-form");
+  if (!form) return;
+
+  if (isStaffOrAdmin()) {
+    form.innerHTML = `
+      <div>
+        <p class="eyebrow">Sesion activa</p>
+        <h3 class="mt-2 text-2xl font-black">${ui.currentRole === "admin" ? "Administrador" : "Staff"} conectado</h3>
+        <p class="field-help">Ya podes usar el panel interno segun tu rol.</p>
+      </div>
+      <div class="booking-actions">
+        <a class="primary-action" href="#panel">Ir al panel</a>
+        <button class="plain-button" type="button" data-action="logout">Cerrar sesion</button>
+      </div>
+    `;
+    return;
+  }
+
+  form.innerHTML = `
+    <div>
+      <p class="eyebrow">Supabase Auth</p>
+      <h3 class="mt-2 text-2xl font-black">Entrar al panel</h3>
+      <p class="field-help">Solo usuarios creados como staff o admin en Supabase pueden acceder.</p>
+    </div>
+    <div class="form-grid">
+      ${simpleInput("Email", "email", "", "email", "admin@atodobrillo.com")}
+      ${simpleInput("Contrasena", "password", "", "password", "Tu contrasena")}
+    </div>
+    <div class="booking-actions">
+      <button class="primary-action" type="submit">Ingresar</button>
+    </div>
+  `;
 }
 
 function renderHeroMetrics() {
@@ -866,7 +1040,7 @@ function createAppointmentFromBooking() {
   const user = upsertClientFromBooking(normalizedPhone);
   const now = nowIso();
 
-  state.appointments.push({
+  const appointment = {
     id: makeId("apt"),
     clientUid: user.uid,
     clientName: ui.booking.clientName.trim(),
@@ -888,7 +1062,9 @@ function createAppointmentFromBooking() {
     createdAt: now,
     updatedAt: now,
     completedAt: null,
-  });
+  };
+
+  state.appointments.push(appointment);
 
   ui.clientLookupPhone = ui.booking.clientPhone;
   ui.booking = {
@@ -903,6 +1079,7 @@ function createAppointmentFromBooking() {
   ui.bookingStep = 1;
 
   saveStore();
+  persistPublicBooking(user, appointment);
   showToast("Reserva creada. Ya aparece en la agenda del staff.");
   renderAll();
 }
@@ -980,7 +1157,7 @@ function renderAgenda() {
 function renderAppointmentCard(appointment) {
   const today = isToday(appointment.scheduledAt);
   const done = appointment.status === "done";
-  const canUseWhatsApp = ["staff", "admin"].includes(ui.currentRole) && done;
+  const canUseWhatsApp = isStaffOrAdmin() && done;
   const statusClass = statusClasses[appointment.status] || "blue";
 
   return `
@@ -1007,7 +1184,7 @@ function renderAppointmentCard(appointment) {
 }
 
 function renderStatusControl(appointment) {
-  if (!["staff", "admin"].includes(ui.currentRole)) {
+  if (!isStaffOrAdmin()) {
     return `<span class="badge blue">Solo lectura</span>`;
   }
 
@@ -1046,6 +1223,7 @@ function updateAppointmentStatus(id, nextStatus) {
   }
 
   saveStore();
+  syncOperationalStateToSupabase();
   showToast(nextStatus === "done" ? "Trabajo terminado. WhatsApp quedo disponible para clic manual." : "Estado actualizado.");
   renderAll();
 }
@@ -1084,7 +1262,7 @@ function openWhatsAppForAppointment(id) {
   const appointment = state.appointments.find((item) => item.id === id);
   if (!appointment) return;
 
-  if (!["staff", "admin"].includes(ui.currentRole)) {
+  if (!isStaffOrAdmin()) {
     showToast("Solo staff o admin puede abrir WhatsApp desde el panel.");
     return;
   }
@@ -1120,6 +1298,7 @@ function openWhatsAppForAppointment(id) {
   });
 
   saveStore();
+  syncOperationalStateToSupabase();
   showToast("WhatsApp abierto y registrado en el turno.");
   renderAll();
 }
@@ -1195,7 +1374,7 @@ function renderServicesAdminList() {
 }
 
 function saveService(form) {
-  if (ui.currentRole !== "admin") {
+  if (!isAdmin()) {
     showToast("Solo admin puede gestionar servicios.");
     return;
   }
@@ -1232,6 +1411,7 @@ function saveService(form) {
   }
 
   saveStore();
+  syncAdminStateToSupabase();
   renderAll();
 }
 
@@ -1241,6 +1421,7 @@ function toggleService(id) {
   service.isActive = !service.isActive;
   service.updatedAt = nowIso();
   saveStore();
+  syncAdminStateToSupabase();
   showToast(service.isActive ? "Servicio activado." : "Servicio desactivado.");
   renderAll();
 }
@@ -1250,6 +1431,7 @@ function deleteService(id) {
   state.services = state.services.filter((item) => item.id !== id);
   saveStore();
   deleteSupabaseRow("services", "id", id);
+  syncAdminStateToSupabase();
   showToast("Servicio eliminado.");
   renderAll();
 }
@@ -1337,7 +1519,7 @@ function renderExpenseList() {
 }
 
 function saveExpense(form) {
-  if (ui.currentRole !== "admin") {
+  if (!isAdmin()) {
     showToast("Solo admin puede cargar egresos.");
     return;
   }
@@ -1364,6 +1546,7 @@ function saveExpense(form) {
   });
 
   saveStore();
+  syncAdminStateToSupabase();
   showToast("Egreso registrado.");
   renderAll();
 }
@@ -1372,6 +1555,7 @@ function deleteExpense(id) {
   state.expenses = state.expenses.filter((item) => item.id !== id);
   saveStore();
   deleteSupabaseRow("expenses", "id", id);
+  syncAdminStateToSupabase();
   showToast("Egreso eliminado.");
   renderAll();
 }
@@ -1396,7 +1580,7 @@ function renderSettings() {
 }
 
 function saveSettings(form) {
-  if (ui.currentRole !== "admin") {
+  if (!isAdmin()) {
     showToast("Solo admin puede cambiar configuracion.");
     return;
   }
@@ -1420,6 +1604,7 @@ function saveSettings(form) {
 
   recalculateRewardFlags();
   saveStore();
+  syncAdminStateToSupabase();
   showToast("Configuracion guardada.");
   renderAll();
 }
@@ -1477,7 +1662,7 @@ function renderLoyaltyList() {
     return;
   }
 
-  list.innerHTML = clients.map((user) => renderClientCard(user, ui.currentRole === "admin")).join("");
+  list.innerHTML = clients.map((user) => renderClientCard(user, isAdmin())).join("");
 }
 
 function renderClientCard(user, showActions) {
@@ -1511,7 +1696,7 @@ function renderClientCard(user, showActions) {
 }
 
 function redeemLoyalty(uid) {
-  if (ui.currentRole !== "admin") {
+  if (!isAdmin()) {
     showToast("Solo admin puede registrar canjes.");
     return;
   }
@@ -1542,6 +1727,7 @@ function redeemLoyalty(uid) {
   });
 
   saveStore();
+  syncOperationalStateToSupabase();
   showToast("Canje registrado y puntos reiniciados.");
   renderAll();
 }
@@ -1576,15 +1762,12 @@ function recalculateRewardFlags() {
 }
 
 function applyRoleVisibility() {
-  const isAdmin = ui.currentRole === "admin";
-  const isStaffOrAdmin = ["staff", "admin"].includes(ui.currentRole);
-
   document.querySelectorAll(".admin-only").forEach((element) => {
-    element.classList.toggle("hidden-by-role", !isAdmin);
+    element.classList.toggle("hidden-by-role", !isAdmin());
   });
 
   document.querySelectorAll(".staff-admin-only").forEach((element) => {
-    element.classList.toggle("hidden-by-role", !isStaffOrAdmin);
+    element.classList.toggle("hidden-by-role", !isStaffOrAdmin());
   });
 }
 
@@ -1595,7 +1778,23 @@ function getActiveServices() {
 }
 
 function currentUser() {
+  if (ui.staffProfile) {
+    return {
+      uid: ui.staffProfile.userId,
+      role: ui.staffProfile.role,
+      displayName: ui.staffProfile.displayName || ui.staffProfile.email,
+    };
+  }
+
   return roleUsers[ui.currentRole];
+}
+
+function isStaffOrAdmin() {
+  return ["staff", "admin"].includes(ui.currentRole) && Boolean(ui.staffProfile || !supabaseClient);
+}
+
+function isAdmin() {
+  return ui.currentRole === "admin" && Boolean(ui.staffProfile || !supabaseClient);
 }
 
 function kpi(label, value) {
