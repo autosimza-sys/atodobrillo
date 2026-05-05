@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>A Todo Brillo - Pro Detailing Ecosystem</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./src/supabase-config.js"></script>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand-lockup" href="#inicio" aria-label="A Todo Brillo">
+        <span class="brand-mark"><i data-lucide="sparkles"></i></span>
+        <span>
+          <strong>A Todo Brillo</strong>
+          <small>Pro Detailing Ecosystem</small>
+        </span>
+      </a>
+
+      <nav class="desktop-nav" aria-label="Principal">
+        <a href="#reserva">Reserva</a>
+        <a href="#panel">Panel</a>
+        <a href="#club">Club</a>
+        <a href="#finanzas">Finanzas</a>
+      </nav>
+
+      <div class="role-switch" aria-label="Cambiar rol de demo">
+        <button type="button" data-role="client">Cliente</button>
+        <button type="button" data-role="staff">Staff</button>
+        <button type="button" data-role="admin">Admin</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="inicio" class="hero-section">
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
+          <p class="eyebrow">Detailing premium en Mendoza</p>
+          <h1>A Todo Brillo</h1>
+          <p class="hero-copy">
+            Reservas rapidas, gestion operativa en tiempo real, finanzas en ARS y Club de Brillo configurable para fidelizar clientes.
+          </p>
+          <div class="hero-actions">
+            <a class="primary-action" href="#reserva">
+              <i data-lucide="calendar-plus"></i>
+              Reservar ahora
+            </a>
+            <a class="secondary-action" href="#panel">
+              <i data-lucide="layout-dashboard"></i>
+              Ver panel
+            </a>
+          </div>
+        </div>
+        <div class="hero-metrics" aria-label="Metricas de confianza">
+          <div>
+            <strong id="metric-washes">1.240+</strong>
+            <span>lavados realizados</span>
+          </div>
+          <div>
+            <strong>4.9</strong>
+            <span>calificacion promedio</span>
+          </div>
+          <div>
+            <strong>100%</strong>
+            <span>garantia de cuidado</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-wrap benefits-grid" aria-label="Beneficios">
+        <article>
+          <i data-lucide="droplets"></i>
+          <h2>pH neutro</h2>
+          <p>Limpieza segura para pintura, lacas y tratamientos previos.</p>
+        </article>
+        <article>
+          <i data-lucide="sun"></i>
+          <h2>Proteccion UV</h2>
+          <p>Terminacion preparada para el sol fuerte y el uso diario en Mendoza.</p>
+        </article>
+        <article>
+          <i data-lucide="shield-check"></i>
+          <h2>Proceso controlado</h2>
+          <p>Agenda, estados, pagos y fidelizacion conectados desde una sola vista.</p>
+        </article>
+      </section>
+
+      <section id="reserva" class="section-wrap two-column">
+        <div class="section-heading">
+          <p class="eyebrow">Reserva intuitiva</p>
+          <h2>Turno listo en 5 pasos</h2>
+          <p>El formulario valida datos clave, guarda precio historico del servicio y deduplica clientes por WhatsApp.</p>
+        </div>
+
+        <article class="app-panel booking-panel">
+          <div id="booking-progress" class="stepper"></div>
+          <form id="booking-form" novalidate></form>
+        </article>
+      </section>
+
+      <section id="panel" class="section-wrap dashboard-grid">
+        <div class="section-heading wide">
+          <p class="eyebrow">Staff/Admin</p>
+          <h2>Panel operativo</h2>
+          <p>Agenda cronologica con urgencia para hoy, estados de trabajo y WhatsApp manual por clic.</p>
+        </div>
+
+        <article class="app-panel kpi-strip" id="operations-kpis"></article>
+        <article class="app-panel agenda-panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Agenda inteligente</p>
+              <h3>Trabajos</h3>
+            </div>
+            <button class="ghost-action" type="button" data-action="seed-demo">
+              <i data-lucide="refresh-cw"></i>
+              Demo
+            </button>
+          </div>
+          <div id="agenda-list" class="agenda-list"></div>
+        </article>
+
+        <article id="servicios" class="app-panel admin-only">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Catalogo</p>
+              <h3>Servicios y precios</h3>
+            </div>
+          </div>
+          <form id="service-form" class="compact-form"></form>
+          <div id="services-admin-list" class="stack-list"></div>
+        </article>
+      </section>
+
+      <section id="finanzas" class="section-wrap dashboard-grid admin-only">
+        <div class="section-heading wide">
+          <p class="eyebrow">Gestion financiera</p>
+          <h2>Ingresos, egresos y neto</h2>
+          <p>Los ingresos salen automaticamente de trabajos terminados. Los egresos se cargan manualmente.</p>
+        </div>
+
+        <article class="app-panel kpi-strip" id="finance-kpis"></article>
+        <article class="app-panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Egresos</p>
+              <h3>Cargar gasto operativo</h3>
+            </div>
+          </div>
+          <form id="expense-form" class="compact-form"></form>
+          <div id="expense-list" class="stack-list"></div>
+        </article>
+
+        <article class="app-panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Configuracion</p>
+              <h3>Negocio</h3>
+            </div>
+          </div>
+          <form id="settings-form" class="compact-form"></form>
+        </article>
+      </section>
+
+      <section id="club" class="section-wrap dashboard-grid">
+        <div class="section-heading wide">
+          <p class="eyebrow">Club de Brillo</p>
+          <h2>Sellos de fidelizacion</h2>
+          <p>El objetivo del premio se puede configurar entre 5 y 10 lavados desde el rol admin.</p>
+        </div>
+
+        <article class="app-panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Cliente</p>
+              <h3>Consultar progreso</h3>
+            </div>
+          </div>
+          <form id="client-lookup-form" class="compact-form"></form>
+          <div id="client-club-card"></div>
+        </article>
+
+        <article class="app-panel staff-admin-only">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Staff/Admin</p>
+              <h3>Clientes del club</h3>
+            </div>
+          </div>
+          <div id="loyalty-list" class="stack-list"></div>
+        </article>
+      </section>
+    </main>
+
+    <aside id="toast" class="toast" role="status" aria-live="polite"></aside>
+
+    <footer class="footer">
+      <span>A Todo Brillo - SPA demo con persistencia local</span>
+      <a href="./README.md">README</a>
+      <a href="./modelo-datos-firestore.md">Modelo Firestore</a>
+      <a href="./backlog-funcional.md">Backlog</a>
+    </footer>
+
+    <script src="./src/app.js"></script>
+  </body>
+</html>
