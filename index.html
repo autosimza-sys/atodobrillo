@@ -22,16 +22,13 @@
 
       <nav class="desktop-nav" aria-label="Principal">
         <a href="#reserva">Reserva</a>
-        <a href="#panel">Panel</a>
+        <a href="#ingreso">Ingreso staff</a>
+        <a href="#panel" class="staff-admin-only">Panel</a>
         <a href="#club">Club</a>
-        <a href="#finanzas">Finanzas</a>
+        <a href="#finanzas" class="admin-only">Finanzas</a>
       </nav>
 
-      <div class="role-switch" aria-label="Cambiar rol de demo">
-        <button type="button" data-role="client">Cliente</button>
-        <button type="button" data-role="staff">Staff</button>
-        <button type="button" data-role="admin">Admin</button>
-      </div>
+      <div id="auth-status" class="auth-status"></div>
     </header>
 
     <main>
@@ -48,9 +45,9 @@
               <i data-lucide="calendar-plus"></i>
               Reservar ahora
             </a>
-            <a class="secondary-action" href="#panel">
-              <i data-lucide="layout-dashboard"></i>
-              Ver panel
+            <a class="secondary-action" href="#ingreso">
+              <i data-lucide="lock-keyhole"></i>
+              Ingreso staff
             </a>
           </div>
         </div>
@@ -101,7 +98,19 @@
         </article>
       </section>
 
-      <section id="panel" class="section-wrap dashboard-grid">
+      <section id="ingreso" class="section-wrap two-column">
+        <div class="section-heading">
+          <p class="eyebrow">Acceso interno</p>
+          <h2>Ingreso staff/admin</h2>
+          <p>El panel operativo, finanzas, servicios y configuracion quedan protegidos con Supabase Auth.</p>
+        </div>
+
+        <article class="app-panel auth-panel">
+          <form id="staff-login-form" class="compact-form"></form>
+        </article>
+      </section>
+
+      <section id="panel" class="section-wrap dashboard-grid staff-admin-only">
         <div class="section-heading wide">
           <p class="eyebrow">Staff/Admin</p>
           <h2>Panel operativo</h2>
@@ -115,7 +124,7 @@
               <p class="eyebrow">Agenda inteligente</p>
               <h3>Trabajos</h3>
             </div>
-            <button class="ghost-action" type="button" data-action="seed-demo">
+            <button class="ghost-action admin-only" type="button" data-action="seed-demo">
               <i data-lucide="refresh-cw"></i>
               Demo
             </button>
@@ -200,6 +209,7 @@
     <footer class="footer">
       <span>A Todo Brillo - SPA demo con persistencia local</span>
       <a href="./README.md">README</a>
+      <a href="./SEGURIDAD.md">Seguridad</a>
       <a href="./modelo-datos-firestore.md">Modelo Firestore</a>
       <a href="./backlog-funcional.md">Backlog</a>
     </footer>

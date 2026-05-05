@@ -10,6 +10,9 @@ Documentacion funcional y tecnica inicial para convertir la vision del producto 
 - [Preview de documentacion](./preview.html): vista visual resumida de la documentacion tecnica.
 - [Como publicar](./COMO-PUBLICAR.md): guia paso a paso para GitHub, StackBlitz, Vercel y Supabase.
 - [SQL Supabase demo](./supabase-schema-demo.sql): tablas iniciales para usar Supabase como base de datos.
+- [Seguridad](./SEGURIDAD.md): pasos para activar login staff/admin y cerrar permisos.
+- [SQL Seguridad Paso 1](./supabase-seguridad-paso1-staff.sql): crea perfiles internos.
+- [SQL Seguridad Paso 2](./supabase-seguridad-paso2-rls-produccion.sql): cierra RLS para produccion.
 
 ## Codigo
 
