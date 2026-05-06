@@ -26,9 +26,9 @@ const categoryLabels = {
 };
 
 const roleUsers = {
-  client: { uid: "demo_client", role: "client", displayName: "Cliente demo" },
-  staff: { uid: "demo_staff", role: "staff", displayName: "Staff demo" },
-  admin: { uid: "demo_admin", role: "admin", displayName: "Admin demo" },
+  client: { uid: "local_client", role: "client", displayName: "Cliente" },
+  staff: { uid: "local_staff", role: "staff", displayName: "Staff" },
+  admin: { uid: "local_admin", role: "admin", displayName: "Admin" },
 };
 
 const supabaseClient = createSupabaseClient();
@@ -48,10 +48,13 @@ const ui = {
     time: "10:00",
     serviceId: "",
   },
+  bookingConfirmed: null,
   editingServiceId: null,
   clientLookupPhone: "",
+  clientLookupResult: null,
   toastTimer: null,
   syncTimer: null,
+  connectionError: false,
 };
 
 let state = loadStore();
@@ -60,15 +63,18 @@ renderAll();
 initializeAuth();
 hydrateSupabaseStore();
 
-document.addEventListener("click", (event) => {
+document.addEventListener("click", async (event) => {
   const actionButton = event.target.closest("[data-action]");
   if (!actionButton) return;
 
+  event.preventDefault();
   const { action, id, serviceId } = actionButton.dataset;
 
   if (action === "booking-next") nextBookingStep();
   if (action === "booking-prev") previousBookingStep();
+  if (action === "new-booking") resetBooking();
   if (action === "select-service") {
+    ui.bookingConfirmed = null;
     ui.booking.serviceId = serviceId;
     renderBooking();
   }
@@ -85,8 +91,7 @@ document.addEventListener("click", (event) => {
   if (action === "open-whatsapp") openWhatsAppForAppointment(id);
   if (action === "redeem-loyalty") redeemLoyalty(id);
   if (action === "delete-expense") deleteExpense(id);
-  if (action === "seed-demo") addDemoAppointment();
-  if (action === "logout") logoutStaff();
+  if (action === "logout") await logoutStaff();
 });
 
 document.addEventListener("input", (event) => {
@@ -96,14 +101,14 @@ document.addEventListener("input", (event) => {
   }
 });
 
-document.addEventListener("change", (event) => {
+document.addEventListener("change", async (event) => {
   const statusSelect = event.target.closest("[data-status-appointment]");
   if (statusSelect) {
-    updateAppointmentStatus(statusSelect.dataset.statusAppointment, statusSelect.value);
+    await updateAppointmentStatus(statusSelect.dataset.statusAppointment, statusSelect.value);
   }
 });
 
-document.addEventListener("submit", (event) => {
+document.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   if (event.target.id === "booking-form") {
@@ -125,6 +130,7 @@ document.addEventListener("submit", (event) => {
   if (event.target.id === "client-lookup-form") {
     const form = new FormData(event.target);
     ui.clientLookupPhone = String(form.get("phone") || "");
+    await lookupClientProgress();
     renderLoyalty();
   }
 
@@ -156,6 +162,9 @@ function seedStore() {
     businessName: "A Todo Brillo",
     country: "AR",
     province: "Mendoza",
+    businessAddress: "Direccion a confirmar, Mendoza",
+    mapUrl: "",
+    contactPhone: "",
     currency: "ARS",
     locale: "es-AR",
     timezone: "America/Argentina/Mendoza",
@@ -309,7 +318,7 @@ function seedStore() {
       category: "supplies",
       expenseDate: toIsoFromInput(dateInputValue(0), "08:00"),
       notes: "Reposicion semanal",
-      createdBy: "demo_admin",
+      createdBy: "system",
       createdAt: now,
       updatedAt: now,
     },
@@ -378,10 +387,11 @@ async function hydrateSupabaseStore() {
     showToast("Conectando con Supabase...");
     const remoteState = await fetchSupabaseState(isStaffOrAdmin());
     const hasRemoteData = remoteState.services.length || remoteState.users.length || remoteState.appointments.length || remoteState.expenses.length;
+    ui.connectionError = false;
 
     if (!hasRemoteData) {
       if (isAdmin()) await syncFullStateToSupabase();
-      showToast("Supabase conectado. Se cargaron datos demo iniciales.");
+      showToast("Supabase conectado.");
       return;
     }
 
@@ -390,7 +400,18 @@ async function hydrateSupabaseStore() {
     showToast("Datos cargados desde Supabase.");
     renderAll();
   } catch (error) {
-    showToast(`Supabase no respondio. La app sigue en modo local. ${error.message || ""}`);
+    ui.connectionError = true;
+    state = {
+      ...state,
+      services: [],
+      users: [],
+      appointments: [],
+      expenses: [],
+      loyaltyEvents: [],
+      notifications: [],
+    };
+    showToast(`No se pudo conectar con la base de datos. ${error.message || ""}`);
+    renderAll();
   }
 }
 
@@ -545,8 +566,21 @@ async function loginStaff(form) {
 }
 
 async function logoutStaff() {
-  if (!supabaseClient) return;
-  await supabaseClient.auth.signOut();
+  if (!supabaseClient) {
+    ui.authUser = null;
+    ui.staffProfile = null;
+    ui.currentRole = "client";
+    showToast("Sesion cerrada.");
+    renderAll();
+    return;
+  }
+
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) {
+    showToast(`No se pudo cerrar sesion: ${error.message}`);
+    return;
+  }
+
   ui.authUser = null;
   ui.staffProfile = null;
   ui.currentRole = "client";
@@ -582,12 +616,97 @@ function syncAdminStateToSupabase() {
   syncFullStateToSupabase().catch((error) => showToast(`No se pudo sincronizar admin: ${error.message || ""}`));
 }
 
+async function persistAppointmentStatus(appointment, completion) {
+  if (!supabaseClient || !isStaffOrAdmin()) return;
+
+  await assertSupabaseResult(
+    supabaseClient
+      .from("appointments")
+      .update(appointmentToRow(appointment))
+      .eq("id", appointment.id)
+  );
+
+  if (completion?.user) {
+    await assertSupabaseResult(
+      supabaseClient
+        .from("users")
+        .update(userToRow(completion.user))
+        .eq("uid", completion.user.uid)
+    );
+  }
+
+  if (completion?.event) {
+    const result = await supabaseClient.from("loyalty_events").insert(loyaltyEventToRow(completion.event));
+    if (result.error && result.error.code !== "23505") throw result.error;
+  }
+}
+
+async function persistWhatsappNotification(appointment, notification) {
+  if (!supabaseClient || !isStaffOrAdmin()) return;
+
+  await assertSupabaseResult(
+    supabaseClient
+      .from("appointments")
+      .update(appointmentToRow(appointment))
+      .eq("id", appointment.id)
+  );
+
+  const result = await supabaseClient.from("notifications").insert(notificationToRow(notification));
+  if (result.error && result.error.code !== "23505") throw result.error;
+}
+
+async function lookupClientProgress() {
+  ui.clientLookupResult = null;
+
+  if (!supabaseClient || isStaffOrAdmin()) return;
+
+  const normalized = normalizePhone(ui.clientLookupPhone);
+  if (normalized.length < 12) return;
+
+  const { data, error } = await supabaseClient.rpc("lookup_loyalty_by_phone", {
+    phone_digits: normalized,
+  });
+
+  if (error) {
+    showToast(`No se pudo consultar el Club de Brillo: ${error.message}`);
+    return;
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return;
+
+  ui.clientLookupResult = {
+    uid: "client_lookup",
+    role: "client",
+    displayName: row.display_name,
+    phone: ui.clientLookupPhone,
+    normalizedPhone: normalized,
+    email: null,
+    vehicleName: row.vehicle_name,
+    vehiclePlate: null,
+    loyaltyPoints: Number(row.loyalty_points || 0),
+    lifetimeServices: Number(row.lifetime_services || 0),
+    courtesyWashAvailable: Boolean(row.courtesy_wash_available),
+    latestVehicleName: row.latest_vehicle_name,
+    latestServiceName: row.latest_service_name,
+    latestStatus: row.latest_status,
+    latestScheduledAt: row.latest_scheduled_at,
+    latestCompletedAt: row.latest_completed_at,
+    createdAt: null,
+    updatedAt: null,
+    lastAppointmentAt: null,
+  };
+}
+
 function settingsFromRow(row) {
   if (!row) return null;
   return {
     businessName: row.business_name,
     country: row.country,
     province: row.province,
+    businessAddress: row.business_address || "Direccion a confirmar, Mendoza",
+    mapUrl: row.map_url || "",
+    contactPhone: row.contact_phone || "",
     currency: row.currency,
     locale: row.locale,
     timezone: row.timezone,
@@ -607,6 +726,9 @@ function sanitizeSettings(settings) {
 
   if (!isValidLocale(clean.locale)) clean.locale = "es-AR";
   if (!clean.currency || clean.currency.length !== 3) clean.currency = "ARS";
+  clean.businessAddress = String(clean.businessAddress || "Direccion a confirmar, Mendoza");
+  clean.mapUrl = String(clean.mapUrl || "");
+  clean.contactPhone = String(clean.contactPhone || "");
   if (!allowedTargets.includes(Number(clean.loyaltyTargetServices))) clean.loyaltyTargetServices = 8;
 
   return clean;
@@ -618,6 +740,9 @@ function settingsToRow(settings) {
     business_name: settings.businessName,
     country: settings.country,
     province: settings.province,
+    business_address: settings.businessAddress,
+    map_url: settings.mapUrl,
+    contact_phone: settings.contactPhone,
     currency: settings.currency,
     locale: settings.locale,
     timezone: settings.timezone,
@@ -835,6 +960,7 @@ function renderAll() {
   renderAuthStatus();
   renderStaffLogin();
   renderHeroMetrics();
+  renderLocationCard();
   renderBooking();
   renderOperations();
   renderServicesAdmin();
@@ -910,12 +1036,72 @@ function renderHeroMetrics() {
   if (metric) metric.textContent = `${formatNumber(1240 + doneCount)}+`;
 }
 
+function renderLocationCard() {
+  const container = document.getElementById("location-card");
+  if (!container) return;
+
+  const address = state.settings.businessAddress || "Direccion a confirmar, Mendoza";
+  const phone = state.settings.contactPhone || "";
+  const mapUrl = state.settings.mapUrl || "";
+
+  container.innerHTML = `
+    <div class="panel-title">
+      <div>
+        <p class="eyebrow">Ubicacion</p>
+        <h3>Donde traer el vehiculo</h3>
+      </div>
+      <i data-lucide="map-pin"></i>
+    </div>
+    <div class="info-list">
+      <div>
+        <span>Direccion del lavadero</span>
+        <strong>${escapeHtml(address)}</strong>
+      </div>
+      ${phone ? `
+        <div>
+          <span>WhatsApp</span>
+          <strong>${escapeHtml(phone)}</strong>
+        </div>
+      ` : ""}
+    </div>
+    <div class="booking-actions">
+      ${mapUrl ? `
+        <a class="primary-action" href="${escapeAttr(mapUrl)}" target="_blank" rel="noopener noreferrer">
+          <i data-lucide="navigation"></i>
+          Abrir ubicacion
+        </a>
+      ` : `
+        <span class="badge warn">Ubicacion pendiente de cargar</span>
+      `}
+    </div>
+  `;
+}
+
 function renderBooking() {
   const progress = document.getElementById("booking-progress");
   const form = document.getElementById("booking-form");
   if (!progress || !form) return;
 
+  if (ui.connectionError) {
+    progress.innerHTML = "";
+    form.innerHTML = `
+      <div class="empty-state">
+        No se pudo conectar con la base de datos. Recarga la pagina en unos minutos o contacta a A Todo Brillo por WhatsApp.
+      </div>
+    `;
+    return;
+  }
+
   const labels = ["Nombre", "WhatsApp", "Vehiculo", "Fecha", "Servicio"];
+
+  if (ui.bookingConfirmed) {
+    progress.innerHTML = labels
+      .map((label, index) => `<button type="button" class="done" disabled>${index + 1}. ${label}</button>`)
+      .join("");
+    form.innerHTML = renderBookingConfirmation(ui.bookingConfirmed);
+    return;
+  }
+
   progress.innerHTML = labels
     .map((label, index) => {
       const step = index + 1;
@@ -925,6 +1111,45 @@ function renderBooking() {
     .join("");
 
   form.innerHTML = `${renderBookingStep()}${renderBookingActions()}`;
+}
+
+function renderBookingConfirmation(appointment) {
+  return `
+    <div class="confirmation-card">
+      <span class="confirmation-icon"><i data-lucide="circle-check"></i></span>
+      <div>
+        <p class="eyebrow">Turno recibido</p>
+        <h3>Tu reserva fue tomada</h3>
+        <p class="field-help">Quedo registrada en la agenda. El equipo puede verla en el panel y confirmar el trabajo.</p>
+      </div>
+      <div class="summary-list">
+        <div>
+          <span>Cliente</span>
+          <strong>${escapeHtml(appointment.clientName)}</strong>
+        </div>
+        <div>
+          <span>Vehiculo</span>
+          <strong>${escapeHtml(appointment.vehicleName)}</strong>
+        </div>
+        <div>
+          <span>Servicio</span>
+          <strong>${escapeHtml(appointment.serviceName)}</strong>
+        </div>
+        <div>
+          <span>Fecha y hora</span>
+          <strong>${formatDateTime(appointment.scheduledAt)}</strong>
+        </div>
+      </div>
+      <div class="location-reminder">
+        <i data-lucide="map-pin"></i>
+        <span>${escapeHtml(state.settings.businessAddress || "Direccion a confirmar, Mendoza")}</span>
+      </div>
+      <div class="booking-actions">
+        <button class="primary-action" type="button" data-action="new-booking">Nueva reserva</button>
+        <a class="secondary-action" href="#club">Consultar estado</a>
+      </div>
+    </div>
+  `;
 }
 
 function renderBookingStep() {
@@ -985,6 +1210,19 @@ function renderBookingStep() {
   }
 
   const activeServices = getActiveServices();
+
+  if (!activeServices.length) {
+    return `
+      <div class="form-grid">
+        <div>
+          <p class="eyebrow">Servicios</p>
+          <h3 class="mt-2 text-2xl font-black">No hay servicios disponibles</h3>
+          <p class="field-help">El catalogo no tiene servicios activos. Contacta a A Todo Brillo para reservar.</p>
+        </div>
+      </div>
+    `;
+  }
+
   return `
     <div class="form-grid">
       <div>
@@ -1032,13 +1270,30 @@ function field(label, name, value, type, placeholder = "", extra = "") {
 }
 
 function nextBookingStep() {
+  ui.bookingConfirmed = null;
   if (!validateBookingStep(ui.bookingStep)) return;
   ui.bookingStep = Math.min(5, ui.bookingStep + 1);
   renderBooking();
 }
 
 function previousBookingStep() {
+  ui.bookingConfirmed = null;
   ui.bookingStep = Math.max(1, ui.bookingStep - 1);
+  renderBooking();
+}
+
+function resetBooking() {
+  ui.bookingConfirmed = null;
+  ui.booking = {
+    clientName: "",
+    clientPhone: "",
+    vehicleName: "",
+    vehiclePlate: "",
+    date: dateInputValue(1),
+    time: "10:00",
+    serviceId: "",
+  };
+  ui.bookingStep = 1;
   renderBooking();
 }
 
@@ -1074,6 +1329,11 @@ function validateBookingStep(step) {
 }
 
 function createAppointmentFromBooking() {
+  if (ui.connectionError || (supabaseClient && !state.services.length)) {
+    showToast("No se pudo conectar con la base de datos. Intenta de nuevo en unos minutos.");
+    return;
+  }
+
   for (let step = 1; step <= 5; step += 1) {
     if (!validateBookingStep(step)) {
       ui.bookingStep = step;
@@ -1114,6 +1374,7 @@ function createAppointmentFromBooking() {
   state.appointments.push(appointment);
 
   ui.clientLookupPhone = ui.booking.clientPhone;
+  ui.bookingConfirmed = appointment;
   ui.booking = {
     clientName: "",
     clientPhone: "",
@@ -1123,11 +1384,11 @@ function createAppointmentFromBooking() {
     time: "10:00",
     serviceId: "",
   };
-  ui.bookingStep = 1;
+  ui.bookingStep = 5;
 
   saveStore();
   persistPublicBooking(user, appointment);
-  showToast("Reserva creada. Ya aparece en la agenda del staff.");
+  showToast("Turno recibido. Quedo guardado en la agenda.");
   renderAll();
 }
 
@@ -1258,25 +1519,36 @@ function renderWhatsappButton(appointment) {
   `;
 }
 
-function updateAppointmentStatus(id, nextStatus) {
+async function updateAppointmentStatus(id, nextStatus) {
   const appointment = state.appointments.find((item) => item.id === id);
   if (!appointment) return;
 
+  const snapshot = JSON.parse(JSON.stringify(state));
   appointment.status = nextStatus;
   appointment.updatedAt = nowIso();
 
+  let completion = null;
   if (nextStatus === "done") {
-    completeAppointment(appointment);
+    completion = completeAppointment(appointment);
   }
 
   saveStore();
-  syncOperationalStateToSupabase();
-  showToast(nextStatus === "done" ? "Trabajo terminado. WhatsApp quedo disponible para clic manual." : "Estado actualizado.");
   renderAll();
+
+  try {
+    await persistAppointmentStatus(appointment, completion);
+    showToast(nextStatus === "done" ? "Trabajo terminado. WhatsApp quedo disponible para clic manual." : "Estado actualizado y guardado.");
+  } catch (error) {
+    state = snapshot;
+    saveStore();
+    showToast(`No se pudo guardar el cambio: ${error.message || ""}`);
+    renderAll();
+  }
 }
 
 function completeAppointment(appointment) {
   const now = nowIso();
+  const completion = { user: null, event: null };
   appointment.completedAt = appointment.completedAt || now;
   appointment.paymentStatus = "paid";
   appointment.paidAmount = appointment.servicePrice;
@@ -1290,7 +1562,8 @@ function completeAppointment(appointment) {
       user.updatedAt = now;
       user.courtesyWashAvailable = user.loyaltyPoints >= state.settings.loyaltyTargetServices;
 
-      state.loyaltyEvents.push({
+      completion.user = user;
+      completion.event = {
         id: makeId("loy"),
         userUid: user.uid,
         appointmentId: appointment.id,
@@ -1299,10 +1572,13 @@ function completeAppointment(appointment) {
         reason: "Servicio completado",
         createdBy: "system",
         createdAt: now,
-      });
+      };
+      state.loyaltyEvents.push(completion.event);
     }
     appointment.loyaltyPointAwarded = true;
   }
+
+  return completion;
 }
 
 function openWhatsAppForAppointment(id) {
@@ -1332,7 +1608,7 @@ function openWhatsAppForAppointment(id) {
   appointment.whatsappOpenedAt = now;
   appointment.whatsappOpenedBy = currentUser().uid;
   appointment.updatedAt = now;
-  state.notifications.push({
+  const notification = {
     id: makeId("ntf"),
     appointmentId: appointment.id,
     userUid: appointment.clientUid,
@@ -1342,12 +1618,14 @@ function openWhatsAppForAppointment(id) {
     messagePreview: message,
     createdAt: now,
     openedAt: now,
-  });
+  };
+  state.notifications.push(notification);
 
   saveStore();
-  syncOperationalStateToSupabase();
-  showToast("WhatsApp abierto y registrado en el turno.");
   renderAll();
+  persistWhatsappNotification(appointment, notification)
+    .then(() => showToast("WhatsApp abierto y registrado en el turno."))
+    .catch((error) => showToast(`WhatsApp se abrio, pero no se pudo guardar el registro: ${error.message || ""}`));
 }
 
 function renderServicesAdmin() {
@@ -1615,6 +1893,9 @@ function renderSettings() {
     <div class="form-grid two">
       ${simpleInput("Nombre del negocio", "businessName", state.settings.businessName, "text", "A Todo Brillo")}
       ${simpleInput("Provincia", "province", state.settings.province, "text", "Mendoza")}
+      ${simpleInput("Direccion del lavadero", "businessAddress", state.settings.businessAddress, "text", "Ej: Carrodilla, Lujan de Cuyo, Mendoza")}
+      ${simpleInput("Link de Google Maps", "mapUrl", state.settings.mapUrl, "url", "https://maps.google.com/...")}
+      ${simpleInput("WhatsApp del negocio", "contactPhone", state.settings.contactPhone, "tel", "Ej: 261 555 1234")}
       ${simpleInput("Moneda", "currency", state.settings.currency, "text", "ARS")}
       ${simpleInput("Locale", "locale", state.settings.locale, "text", "es-AR")}
       ${simpleInput("Zona horaria", "timezone", state.settings.timezone, "text", "America/Argentina/Mendoza")}
@@ -1641,6 +1922,9 @@ function saveSettings(form) {
   Object.assign(state.settings, {
     businessName: String(form.get("businessName") || "A Todo Brillo").trim(),
     province: String(form.get("province") || "Mendoza").trim(),
+    businessAddress: String(form.get("businessAddress") || "Direccion a confirmar, Mendoza").trim(),
+    mapUrl: String(form.get("mapUrl") || "").trim(),
+    contactPhone: String(form.get("contactPhone") || "").trim(),
     currency: String(form.get("currency") || "ARS").trim().toUpperCase(),
     locale: String(form.get("locale") || "es-AR").trim(),
     timezone: String(form.get("timezone") || "America/Argentina/Mendoza").trim(),
@@ -1681,7 +1965,7 @@ function renderClientClubCard() {
   if (!container) return;
 
   const normalized = normalizePhone(ui.clientLookupPhone);
-  const user = state.users.find((item) => item.normalizedPhone === normalized && item.role === "client");
+  const user = ui.clientLookupResult || state.users.find((item) => item.normalizedPhone === normalized && item.role === "client");
 
   if (!ui.clientLookupPhone) {
     container.innerHTML = `<div class="empty-state mt-4">Ingresa un WhatsApp para consultar el progreso.</div>`;
@@ -1733,12 +2017,43 @@ function renderClientCard(user, showActions) {
       <div class="stamps" aria-label="Sellos de fidelizacion">
         ${Array.from({ length: target }, (_, index) => `<span class="stamp ${index < activePoints ? "active" : ""}">${index + 1}</span>`).join("")}
       </div>
+      ${renderClientAppointmentStatus(user)}
       ${showActions && available ? `
         <div class="row-actions">
           <button class="success-button" type="button" data-action="redeem-loyalty" data-id="${user.uid}">Registrar canje</button>
         </div>
       ` : ""}
     </article>
+  `;
+}
+
+function renderClientAppointmentStatus(user) {
+  if (!user.latestStatus) return "";
+
+  const label = statusLabels[user.latestStatus] || user.latestStatus;
+  const badgeClass = statusClasses[user.latestStatus] || "blue";
+  const vehicle = user.latestVehicleName || user.vehicleName || "Tu vehiculo";
+  const service = user.latestServiceName || "Servicio";
+  const scheduled = user.latestScheduledAt ? formatDateTime(user.latestScheduledAt) : "Fecha a confirmar";
+  const readyText = user.latestStatus === "done"
+    ? "Tu vehiculo figura terminado. El equipo puede avisarte por WhatsApp para retirarlo."
+    : "Este es el ultimo estado registrado por el equipo.";
+
+  return `
+    <div class="client-status">
+      <div class="card-head">
+        <div>
+          <p class="eyebrow">Estado del vehiculo</p>
+          <h5>${escapeHtml(vehicle)}</h5>
+        </div>
+        <span class="badge ${badgeClass}">${escapeHtml(label)}</span>
+      </div>
+      <div class="card-meta">
+        <span>${escapeHtml(service)}</span>
+        <span>${scheduled}</span>
+      </div>
+      <p class="muted mt-3">${readyText}</p>
+    </div>
   `;
 }
 
@@ -1777,25 +2092,6 @@ function redeemLoyalty(uid) {
   syncOperationalStateToSupabase();
   showToast("Canje registrado y puntos reiniciados.");
   renderAll();
-}
-
-function addDemoAppointment() {
-  const service = getActiveServices()[0];
-  if (!service) {
-    showToast("Crea un servicio activo antes de cargar una demo.");
-    return;
-  }
-
-  ui.booking = {
-    clientName: "Cliente Demo",
-    clientPhone: "261 555 9000",
-    vehicleName: "Ford Ranger",
-    vehiclePlate: "DE789FG",
-    date: dateInputValue(0),
-    time: "16:30",
-    serviceId: service.id,
-  };
-  createAppointmentFromBooking();
 }
 
 function recalculateRewardFlags() {

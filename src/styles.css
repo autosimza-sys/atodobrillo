@@ -562,6 +562,86 @@ a {
   font-weight: 950;
 }
 
+.confirmation-card,
+.info-list,
+.summary-list,
+.client-status {
+  display: grid;
+  gap: 14px;
+}
+
+.confirmation-card {
+  align-content: start;
+  min-height: 420px;
+}
+
+.confirmation-icon {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 8px;
+  background: var(--emerald-soft);
+  color: #a7f3d0;
+}
+
+.confirmation-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.confirmation-card h3 {
+  margin: 8px 0;
+  font-size: clamp(28px, 4vw, 42px);
+  font-weight: 950;
+  line-height: 1;
+}
+
+.summary-list,
+.info-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.summary-list div,
+.info-list div,
+.location-reminder,
+.client-status {
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.48);
+  padding: 14px;
+}
+
+.summary-list span,
+.info-list span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.summary-list strong,
+.info-list strong {
+  display: block;
+  margin-top: 5px;
+  color: white;
+  font-size: 15px;
+}
+
+.location-reminder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted-strong);
+  font-weight: 800;
+}
+
+.location-reminder svg,
+.panel-title svg {
+  color: #60a5fa;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -714,6 +794,16 @@ a {
   margin-top: 12px;
 }
 
+.client-status {
+  margin-top: 14px;
+}
+
+.client-status h5 {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 950;
+}
+
 .stamp {
   display: grid;
   width: 32px;
@@ -801,6 +891,11 @@ a {
   .two-column,
   .dashboard-grid,
   .benefits-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-list,
+  .info-list {
     grid-template-columns: 1fr;
   }
 
