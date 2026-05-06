@@ -112,7 +112,7 @@ document.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   if (event.target.id === "booking-form") {
-    createAppointmentFromBooking();
+    await createAppointmentFromBooking();
   }
 
   if (event.target.id === "service-form") {
@@ -503,8 +503,13 @@ async function applySession(session) {
   if (ui.authUser) {
     ui.staffProfile = await fetchStaffProfile(ui.authUser.id);
 
-    if (!ui.staffProfile?.isActive) {
-      showToast("Tu usuario no tiene permiso interno activo.");
+    if (!ui.staffProfile) {
+      showToast("El usuario existe, pero falta cargarlo como staff/admin.");
+      await supabaseClient.auth.signOut();
+      ui.authUser = null;
+      ui.staffProfile = null;
+    } else if (!ui.staffProfile.isActive) {
+      showToast("Tu usuario interno esta desactivado.");
       await supabaseClient.auth.signOut();
       ui.authUser = null;
       ui.staffProfile = null;
@@ -523,7 +528,6 @@ async function fetchStaffProfile(userId) {
     .from("staff_profiles")
     .select("*")
     .eq("user_id", userId)
-    .eq("is_active", true)
     .maybeSingle();
 
   if (error) {
@@ -558,7 +562,10 @@ async function loginStaff(form) {
 
   const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if (error) {
-    showToast(`No se pudo ingresar: ${error.message}`);
+    const message = error.message?.toLowerCase().includes("invalid login credentials")
+      ? "Email o contrasena incorrectos. Usa el mismo email creado en Supabase Auth."
+      : error.message;
+    showToast(`No se pudo ingresar: ${message}`);
     return;
   }
 
@@ -589,15 +596,48 @@ async function logoutStaff() {
   renderAll();
 }
 
-function persistPublicBooking(user, appointment) {
-  if (!supabaseClient) return;
+async function persistPublicBooking(user, appointment) {
+  if (!supabaseClient) {
+    return {
+      userUid: user.uid,
+      appointmentId: appointment.id,
+      serviceName: appointment.serviceName,
+      servicePrice: appointment.servicePrice,
+    };
+  }
 
-  (async () => {
-    const userResult = await supabaseClient.from("users").insert(userToRow(user));
-    if (userResult.error && userResult.error.code !== "23505") throw userResult.error;
+  const rpcResult = await supabaseClient.rpc("create_public_booking", {
+    p_client_name: appointment.clientName,
+    p_client_phone: appointment.clientPhone,
+    p_normalized_phone: appointment.normalizedPhone,
+    p_vehicle_name: appointment.vehicleName,
+    p_vehicle_plate: appointment.vehiclePlate,
+    p_service_id: appointment.serviceId,
+    p_scheduled_at: appointment.scheduledAt,
+  });
 
-    await assertSupabaseResult(supabaseClient.from("appointments").insert(appointmentToRow(appointment)));
-  })().catch((error) => showToast(`No se pudo guardar en Supabase: ${error.message || ""}`));
+  if (!rpcResult.error) {
+    const row = Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data;
+    return {
+      userUid: row?.user_uid || user.uid,
+      appointmentId: row?.appointment_id || appointment.id,
+      serviceName: row?.service_name || appointment.serviceName,
+      servicePrice: Number(row?.service_price || appointment.servicePrice),
+    };
+  }
+
+  const userResult = await supabaseClient.from("users").insert(userToRow(user));
+  if (userResult.error && userResult.error.code !== "23505") throw rpcResult.error;
+
+  const appointmentResult = await supabaseClient.from("appointments").insert(appointmentToRow(appointment));
+  if (appointmentResult.error) throw rpcResult.error;
+
+  return {
+    userUid: user.uid,
+    appointmentId: appointment.id,
+    serviceName: appointment.serviceName,
+    servicePrice: appointment.servicePrice,
+  };
 }
 
 function syncOperationalStateToSupabase() {
@@ -1328,7 +1368,7 @@ function validateBookingStep(step) {
   return true;
 }
 
-function createAppointmentFromBooking() {
+async function createAppointmentFromBooking() {
   if (ui.connectionError || (supabaseClient && !state.services.length)) {
     showToast("No se pudo conectar con la base de datos. Intenta de nuevo en unos minutos.");
     return;
@@ -1344,6 +1384,7 @@ function createAppointmentFromBooking() {
 
   const service = state.services.find((item) => item.id === ui.booking.serviceId);
   const normalizedPhone = normalizePhone(ui.booking.clientPhone);
+  const snapshot = JSON.parse(JSON.stringify(state));
   const user = upsertClientFromBooking(normalizedPhone);
   const now = nowIso();
 
@@ -1371,6 +1412,21 @@ function createAppointmentFromBooking() {
     completedAt: null,
   };
 
+  try {
+    const persisted = await persistPublicBooking(user, appointment);
+    user.uid = persisted.userUid;
+    appointment.id = persisted.appointmentId;
+    appointment.clientUid = persisted.userUid;
+    appointment.serviceName = persisted.serviceName;
+    appointment.servicePrice = persisted.servicePrice;
+  } catch (error) {
+    state = snapshot;
+    saveStore();
+    showToast(`No se confirmo el turno porque Supabase no guardo: ${error.message || ""}`);
+    renderAll();
+    return;
+  }
+
   state.appointments.push(appointment);
 
   ui.clientLookupPhone = ui.booking.clientPhone;
@@ -1387,7 +1443,6 @@ function createAppointmentFromBooking() {
   ui.bookingStep = 5;
 
   saveStore();
-  persistPublicBooking(user, appointment);
   showToast("Turno recibido. Quedo guardado en la agenda.");
   renderAll();
 }
