@@ -15,6 +15,11 @@ create table if not exists public.staff_profiles (
   updated_at timestamptz not null default now()
 );
 
+alter table public.settings
+  add column if not exists business_address text not null default 'Direccion a confirmar, Mendoza',
+  add column if not exists map_url text not null default '',
+  add column if not exists contact_phone text not null default '';
+
 alter table public.staff_profiles enable row level security;
 
 create or replace function public.current_staff_role()
@@ -213,13 +218,20 @@ grant execute on function public.current_staff_role() to anon, authenticated;
 grant execute on function public.is_internal_staff() to anon, authenticated;
 grant execute on function public.is_internal_admin() to anon, authenticated;
 
-create or replace function public.lookup_loyalty_by_phone(phone_digits text)
+drop function if exists public.lookup_loyalty_by_phone(text);
+
+create function public.lookup_loyalty_by_phone(phone_digits text)
 returns table (
   display_name text,
   vehicle_name text,
   loyalty_points integer,
   lifetime_services integer,
-  courtesy_wash_available boolean
+  courtesy_wash_available boolean,
+  latest_vehicle_name text,
+  latest_service_name text,
+  latest_status text,
+  latest_scheduled_at timestamptz,
+  latest_completed_at timestamptz
 )
 language sql
 stable
@@ -231,10 +243,29 @@ as $$
     u.vehicle_name,
     u.loyalty_points,
     u.lifetime_services,
-    u.courtesy_wash_available
+    u.courtesy_wash_available,
+    a.vehicle_name as latest_vehicle_name,
+    a.service_name as latest_service_name,
+    a.status as latest_status,
+    a.scheduled_at as latest_scheduled_at,
+    a.completed_at as latest_completed_at
   from public.users u
+  left join lateral (
+    select
+      ap.vehicle_name,
+      ap.service_name,
+      ap.status,
+      ap.scheduled_at,
+      ap.completed_at,
+      ap.created_at
+    from public.appointments ap
+    where ap.normalized_phone = phone_digits
+    order by ap.scheduled_at desc, ap.created_at desc
+    limit 1
+  ) a on true
   where u.role = 'client'
     and u.normalized_phone = phone_digits
+  order by u.updated_at desc
   limit 1
 $$;
 
