@@ -50,6 +50,7 @@ const ui = {
   },
   editingServiceId: null,
   clientLookupPhone: "",
+  clientLookupResult: null,
   toastTimer: null,
   syncTimer: null,
   connectionError: false,
@@ -103,7 +104,7 @@ document.addEventListener("change", (event) => {
   }
 });
 
-document.addEventListener("submit", (event) => {
+document.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   if (event.target.id === "booking-form") {
@@ -125,6 +126,7 @@ document.addEventListener("submit", (event) => {
   if (event.target.id === "client-lookup-form") {
     const form = new FormData(event.target);
     ui.clientLookupPhone = String(form.get("phone") || "");
+    await lookupClientProgress();
     renderLoyalty();
   }
 
@@ -592,6 +594,44 @@ function syncOperationalStateToSupabase() {
 function syncAdminStateToSupabase() {
   if (!supabaseClient || !isAdmin()) return;
   syncFullStateToSupabase().catch((error) => showToast(`No se pudo sincronizar admin: ${error.message || ""}`));
+}
+
+async function lookupClientProgress() {
+  ui.clientLookupResult = null;
+
+  if (!supabaseClient || isStaffOrAdmin()) return;
+
+  const normalized = normalizePhone(ui.clientLookupPhone);
+  if (normalized.length < 12) return;
+
+  const { data, error } = await supabaseClient.rpc("lookup_loyalty_by_phone", {
+    phone_digits: normalized,
+  });
+
+  if (error) {
+    showToast(`No se pudo consultar el Club de Brillo: ${error.message}`);
+    return;
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return;
+
+  ui.clientLookupResult = {
+    uid: "client_lookup",
+    role: "client",
+    displayName: row.display_name,
+    phone: ui.clientLookupPhone,
+    normalizedPhone: normalized,
+    email: null,
+    vehicleName: row.vehicle_name,
+    vehiclePlate: null,
+    loyaltyPoints: Number(row.loyalty_points || 0),
+    lifetimeServices: Number(row.lifetime_services || 0),
+    courtesyWashAvailable: Boolean(row.courtesy_wash_available),
+    createdAt: null,
+    updatedAt: null,
+    lastAppointmentAt: null,
+  };
 }
 
 function settingsFromRow(row) {
@@ -1721,7 +1761,7 @@ function renderClientClubCard() {
   if (!container) return;
 
   const normalized = normalizePhone(ui.clientLookupPhone);
-  const user = state.users.find((item) => item.normalizedPhone === normalized && item.role === "client");
+  const user = ui.clientLookupResult || state.users.find((item) => item.normalizedPhone === normalized && item.role === "client");
 
   if (!ui.clientLookupPhone) {
     container.innerHTML = `<div class="empty-state mt-4">Ingresa un WhatsApp para consultar el progreso.</div>`;
