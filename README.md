@@ -9,7 +9,7 @@ Documentacion funcional y tecnica inicial para convertir la vision del producto 
 - [SPA funcional](./index.html): landing, reserva, panel operativo, finanzas, servicios, configuracion y Club de Brillo.
 - [Preview de documentacion](./preview.html): vista visual resumida de la documentacion tecnica.
 - [Como publicar](./COMO-PUBLICAR.md): guia paso a paso para GitHub, StackBlitz, Vercel y Supabase.
-- [SQL Supabase demo](./supabase-schema-demo.sql): tablas iniciales para usar Supabase como base de datos.
+- [SQL Supabase inicial](./supabase-schema-demo.sql): tablas iniciales para usar Supabase como base de datos.
 - [Seguridad](./SEGURIDAD.md): pasos para activar login staff/admin y cerrar permisos.
 - [SQL Seguridad Paso 1](./supabase-seguridad-paso1-staff.sql): crea perfiles internos.
 - [SQL Seguridad Paso 2](./supabase-seguridad-paso2-rls-produccion.sql): cierra RLS para produccion.
@@ -22,9 +22,7 @@ La app principal esta implementada con HTML, CSS y JavaScript vanilla:
 - `src/styles.css`: estilo Dark Premium Detailing.
 - `src/app.js`: logica de reservas, roles, servicios, agenda, finanzas, WhatsApp manual y fidelizacion.
 
-La persistencia actual usa `localStorage` con las mismas colecciones logicas definidas para Firestore: `appointments`, `services`, `expenses`, `users`, `settings`, `loyaltyEvents` y `notifications`.
-
-Si completas `src/supabase-config.js` con la URL y anon key de Supabase, la app sincroniza esos datos con Supabase.
+La app de produccion usa Supabase como base de datos. El navegador conserva una copia tecnica para mejorar la carga, pero las reservas y el panel interno dependen de la conexion real a Supabase.
 
 ## Objetivo del sistema
 

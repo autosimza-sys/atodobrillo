@@ -1,6 +1,6 @@
 # Seguridad - A Todo Brillo
 
-Objetivo: pasar de modo demo a modo mas seguro sin romper la app.
+Objetivo: proteger el panel interno sin romper las reservas publicas.
 
 ## Que cambio en la app
 
@@ -104,7 +104,7 @@ Proba:
 - Abrir WhatsApp.
 - Ver finanzas.
 
-Si todo anda, ya estas fuera del modo demo.
+Si todo anda, el panel interno ya queda protegido con login y RLS.
 
 ## Como crear un staff despues
 
@@ -132,4 +132,3 @@ La publishable key puede estar en el navegador. La seguridad real queda en:
 - RLS activado.
 - Politicas por rol.
 - No mostrar panel interno sin login.
-

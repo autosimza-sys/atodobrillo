@@ -10,7 +10,7 @@ Abri este archivo:
 index.html
 ```
 
-La app ya funciona en modo local usando el navegador. Eso significa:
+La app puede abrirse desde el navegador para revisar la interfaz. Para usarla en serio, tiene que estar conectada a Supabase. Eso permite:
 
 - Podes crear reservas.
 - Podes cambiar rol entre cliente, staff y admin.
@@ -18,7 +18,7 @@ La app ya funciona en modo local usando el navegador. Eso significa:
 - Podes probar Club de Brillo.
 - Podes cargar servicios y egresos.
 
-En este modo, los datos quedan guardados en el navegador con `localStorage`.
+En produccion, los datos deben quedar guardados en Supabase.
 
 ## 2. Crear la base en Supabase
 
@@ -45,7 +45,7 @@ Eso crea estas tablas:
 - `loyalty_events`
 - `notifications`
 
-Importante: este SQL tiene politicas abiertas para que el MVP funcione sin login real. Sirve para demo y primeras pruebas. Antes de usarlo con clientes reales hay que cerrar seguridad con login real.
+Importante: este SQL inicial crea la estructura. Antes de usarlo con clientes reales hay que aplicar tambien la guia de seguridad y cerrar permisos con RLS.
 
 ## 3. Conectar la app con Supabase
 
