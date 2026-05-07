@@ -388,12 +388,11 @@ async function hydrateSupabaseStore() {
 
   try {
     showToast("Conectando con Supabase...");
-    const remoteState = await fetchSupabaseState(isStaffOrAdmin());
+    const remoteState = await fetchSupabaseState(isInternalPage() && isStaffOrAdmin());
     const hasRemoteData = remoteState.services.length || remoteState.users.length || remoteState.appointments.length || remoteState.expenses.length;
     ui.connectionError = false;
 
     if (!hasRemoteData) {
-      if (isAdmin()) await syncFullStateToSupabase();
       showToast("Supabase conectado.");
       return;
     }
@@ -485,6 +484,15 @@ async function assertSupabaseResult(request) {
 
 async function initializeAuth() {
   if (!supabaseClient) {
+    ui.authReady = true;
+    renderAll();
+    return;
+  }
+
+  if (!isInternalPage()) {
+    ui.authUser = null;
+    ui.staffProfile = null;
+    ui.currentRole = "client";
     ui.authReady = true;
     renderAll();
     return;
@@ -2291,6 +2299,10 @@ function isStaffOrAdmin() {
 
 function isAdmin() {
   return activeRole() === "admin" && Boolean(ui.authUser || ui.staffProfile || !supabaseClient);
+}
+
+function isInternalPage() {
+  return Boolean(document.getElementById("staff-login-form"));
 }
 
 function activeRole() {
