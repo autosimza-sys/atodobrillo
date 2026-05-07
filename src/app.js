@@ -1,5 +1,7 @@
 const STORAGE_KEY = "atodo-brillo-store-v1";
+const STAFF_SESSION_KEY = "atodo-brillo-staff-session-v1";
 const allowedTargets = [5, 6, 7, 8, 9, 10];
+const adminEmails = ["autosimza@gmail.com"];
 
 const statusLabels = {
   pending: "Pendiente",
@@ -55,6 +57,7 @@ const ui = {
   toastTimer: null,
   syncTimer: null,
   connectionError: false,
+  manualLogout: false,
 };
 
 let state = loadStore();
@@ -487,34 +490,58 @@ async function initializeAuth() {
     return;
   }
 
+  restoreCachedStaffSession();
+  renderAll();
+
   const { data } = await supabaseClient.auth.getSession();
   await applySession(data.session);
 
-  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (event === "SIGNED_OUT" && !ui.manualLogout && restoreCachedStaffSession()) {
+      renderAll();
+      return;
+    }
+
     await applySession(session);
   });
 }
 
 async function applySession(session) {
+  if (!session?.user) {
+    if (!ui.manualLogout && restoreCachedStaffSession()) {
+      ui.authReady = true;
+      renderAll();
+      return;
+    }
+
+    ui.authUser = null;
+    ui.staffProfile = null;
+    ui.currentRole = "client";
+    ui.authReady = true;
+    renderAll();
+    return;
+  }
+
+  ui.manualLogout = false;
   ui.authUser = session?.user || null;
   ui.staffProfile = null;
   ui.currentRole = "client";
 
   if (ui.authUser) {
-    ui.staffProfile = await fetchStaffProfile(ui.authUser.id);
+    ui.staffProfile = await fetchStaffProfile(ui.authUser.id) || fallbackStaffProfile(ui.authUser);
 
     if (!ui.staffProfile) {
       showToast("El usuario existe, pero falta cargarlo como staff/admin.");
-      await supabaseClient.auth.signOut();
-      ui.authUser = null;
-      ui.staffProfile = null;
     } else if (!ui.staffProfile.isActive) {
       showToast("Tu usuario interno esta desactivado.");
+      clearCachedStaffSession();
+      ui.manualLogout = true;
       await supabaseClient.auth.signOut();
       ui.authUser = null;
       ui.staffProfile = null;
     } else {
       ui.currentRole = ui.staffProfile.role;
+      cacheStaffSession(ui.staffProfile, ui.authUser);
       await hydrateSupabaseStore();
     }
   }
@@ -541,7 +568,7 @@ async function fetchStaffProfile(userId) {
     userId: data.user_id,
     email: data.email,
     displayName: data.display_name,
-    role: data.role,
+    role: normalizeRole(data.role),
     isActive: data.is_active,
   };
 }
@@ -560,6 +587,7 @@ async function loginStaff(form) {
     return;
   }
 
+  ui.manualLogout = false;
   const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if (error) {
     const message = error.message?.toLowerCase().includes("invalid login credentials")
@@ -573,6 +601,9 @@ async function loginStaff(form) {
 }
 
 async function logoutStaff() {
+  ui.manualLogout = true;
+  clearCachedStaffSession();
+
   if (!supabaseClient) {
     ui.authUser = null;
     ui.staffProfile = null;
@@ -594,6 +625,57 @@ async function logoutStaff() {
   await hydrateSupabaseStore();
   showToast("Sesion cerrada.");
   renderAll();
+}
+
+function fallbackStaffProfile(user) {
+  const email = normalizeEmail(user?.email);
+  if (!adminEmails.includes(email)) return null;
+
+  return {
+    userId: user.id,
+    email,
+    displayName: "Admin A Todo Brillo",
+    role: "admin",
+    isActive: true,
+  };
+}
+
+function cacheStaffSession(profile, user) {
+  if (!profile?.role) return;
+
+  localStorage.setItem(STAFF_SESSION_KEY, JSON.stringify({
+    userId: profile.userId || user?.id || "",
+    email: normalizeEmail(profile.email || user?.email),
+    displayName: profile.displayName || profile.email || user?.email || "Usuario",
+    role: normalizeRole(profile.role),
+    isActive: profile.isActive !== false,
+    cachedAt: nowIso(),
+  }));
+}
+
+function restoreCachedStaffSession() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(STAFF_SESSION_KEY) || "null");
+    if (!cached?.isActive || !["staff", "admin"].includes(normalizeRole(cached.role))) return false;
+
+    ui.staffProfile = {
+      userId: cached.userId || "cached_staff",
+      email: normalizeEmail(cached.email),
+      displayName: cached.displayName || cached.email || "Usuario",
+      role: normalizeRole(cached.role),
+      isActive: true,
+    };
+    ui.currentRole = ui.staffProfile.role;
+    ui.authReady = true;
+    return true;
+  } catch {
+    clearCachedStaffSession();
+    return false;
+  }
+}
+
+function clearCachedStaffSession() {
+  localStorage.removeItem(STAFF_SESSION_KEY);
 }
 
 async function persistPublicBooking(user, appointment) {
@@ -2194,7 +2276,7 @@ function currentUser() {
   if (ui.staffProfile) {
     return {
       uid: ui.staffProfile.userId,
-      role: ui.staffProfile.role,
+      role: normalizeRole(ui.staffProfile.role),
       displayName: ui.staffProfile.displayName || ui.staffProfile.email,
     };
   }
@@ -2203,11 +2285,31 @@ function currentUser() {
 }
 
 function isStaffOrAdmin() {
-  return ["staff", "admin"].includes(ui.currentRole) && Boolean(ui.staffProfile || !supabaseClient);
+  const role = activeRole();
+  return ["staff", "admin"].includes(role) && Boolean(ui.authUser || ui.staffProfile || !supabaseClient);
 }
 
 function isAdmin() {
-  return ui.currentRole === "admin" && Boolean(ui.staffProfile || !supabaseClient);
+  return activeRole() === "admin" && Boolean(ui.authUser || ui.staffProfile || !supabaseClient);
+}
+
+function activeRole() {
+  const profileRole = normalizeRole(ui.staffProfile?.role);
+  if (profileRole) return profileRole;
+
+  const authEmail = normalizeEmail(ui.authUser?.email || ui.staffProfile?.email);
+  if (adminEmails.includes(authEmail)) return "admin";
+
+  return normalizeRole(ui.currentRole);
+}
+
+function normalizeRole(role) {
+  const clean = String(role || "").trim().toLowerCase();
+  return ["client", "staff", "admin"].includes(clean) ? clean : "";
+}
+
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
 }
 
 function kpi(label, value) {
