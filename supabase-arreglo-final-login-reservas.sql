@@ -84,6 +84,9 @@ alter table public.settings
 drop policy if exists "appointments_staff_insert" on public.appointments;
 drop policy if exists "appointments_staff_update" on public.appointments;
 drop policy if exists "appointments_staff_read" on public.appointments;
+drop policy if exists "settings_admin_write" on public.settings;
+drop policy if exists "services_admin_write" on public.services;
+drop policy if exists "expenses_admin_all" on public.expenses;
 drop policy if exists "users_staff_update" on public.users;
 drop policy if exists "users_staff_read" on public.users;
 drop policy if exists "loyalty_events_staff_insert" on public.loyalty_events;
@@ -109,6 +112,27 @@ for update
 to authenticated
 using (public.is_internal_staff())
 with check (public.is_internal_staff());
+
+create policy "settings_admin_write"
+on public.settings
+for all
+to authenticated
+using (public.is_internal_admin())
+with check (public.is_internal_admin());
+
+create policy "services_admin_write"
+on public.services
+for all
+to authenticated
+using (public.is_internal_admin())
+with check (public.is_internal_admin());
+
+create policy "expenses_admin_all"
+on public.expenses
+for all
+to authenticated
+using (public.is_internal_admin())
+with check (public.is_internal_admin());
 
 create policy "users_staff_read"
 on public.users
@@ -151,7 +175,10 @@ with check (public.is_internal_admin());
 
 grant usage on schema public to anon, authenticated;
 grant all on public.staff_profiles to authenticated;
+grant all on public.settings to authenticated;
+grant all on public.services to authenticated;
 grant all on public.appointments to authenticated;
+grant all on public.expenses to authenticated;
 grant all on public.users to authenticated;
 grant all on public.loyalty_events to authenticated;
 grant all on public.notifications to authenticated;
