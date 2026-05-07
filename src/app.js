@@ -92,7 +92,7 @@ document.addEventListener("click", async (event) => {
   if (action === "toggle-service") toggleService(id);
   if (action === "delete-service") deleteService(id);
   if (action === "open-whatsapp") openWhatsAppForAppointment(id);
-  if (action === "redeem-loyalty") redeemLoyalty(id);
+  if (action === "redeem-loyalty") await redeemLoyalty(id);
   if (action === "delete-expense") deleteExpense(id);
   if (action === "logout") await logoutStaff();
 });
@@ -703,6 +703,8 @@ async function persistPublicBooking(user, appointment) {
     p_vehicle_name: appointment.vehicleName,
     p_vehicle_plate: appointment.vehiclePlate,
     p_service_id: appointment.serviceId,
+    p_service_name: appointment.serviceName,
+    p_service_price: appointment.servicePrice,
     p_scheduled_at: appointment.scheduledAt,
   });
 
@@ -2201,7 +2203,7 @@ function renderClientAppointmentStatus(user) {
   `;
 }
 
-function redeemLoyalty(uid) {
+async function redeemLoyalty(uid) {
   if (!isAdmin()) {
     showToast("Solo admin puede registrar canjes.");
     return;
@@ -2216,6 +2218,7 @@ function redeemLoyalty(uid) {
     return;
   }
 
+  const snapshot = JSON.parse(JSON.stringify(state));
   const now = nowIso();
   user.loyaltyPoints = 0;
   user.courtesyWashAvailable = false;
@@ -2234,24 +2237,29 @@ function redeemLoyalty(uid) {
   state.loyaltyEvents.push(event);
 
   saveStore();
-  persistLoyaltyRedemption(user, event)
-    .catch((error) => showToast(`No se pudo guardar el canje: ${error.message || ""}`));
-  showToast("Canje registrado y puntos reiniciados.");
   renderAll();
+
+  try {
+    await persistLoyaltyRedemption(user, event);
+    showToast("Canje registrado y puntos reiniciados.");
+  } catch (error) {
+    state = snapshot;
+    saveStore();
+    showToast(`No se pudo guardar el canje: ${error.message || ""}`);
+    renderAll();
+  }
 }
 
 async function persistLoyaltyRedemption(user, event) {
   if (!supabaseClient || !isAdmin()) return;
 
-  await assertSupabaseResult(
-    supabaseClient
-      .from("users")
-      .update(userToRow(user))
-      .eq("uid", user.uid)
-  );
+  const { error } = await supabaseClient.rpc("redeem_loyalty_admin", {
+    p_user_uid: user.uid,
+    p_points: event.points,
+    p_reason: event.reason,
+  });
 
-  const result = await supabaseClient.from("loyalty_events").insert(loyaltyEventToRow(event));
-  if (result.error && result.error.code !== "23505") throw result.error;
+  if (error) throw error;
 }
 
 function recalculateRewardFlags() {
