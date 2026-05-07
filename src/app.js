@@ -641,19 +641,18 @@ async function persistPublicBooking(user, appointment) {
 }
 
 function syncOperationalStateToSupabase() {
-  if (!supabaseClient || !isStaffOrAdmin()) return;
-
-  Promise.all([
-    state.users.length ? assertSupabaseResult(supabaseClient.from("users").upsert(state.users.map(userToRow), { onConflict: "uid" })) : null,
-    state.appointments.length ? assertSupabaseResult(supabaseClient.from("appointments").upsert(state.appointments.map(appointmentToRow), { onConflict: "id" })) : null,
-    state.loyaltyEvents.length ? assertSupabaseResult(supabaseClient.from("loyalty_events").upsert(state.loyaltyEvents.map(loyaltyEventToRow), { onConflict: "id" })) : null,
-    state.notifications.length ? assertSupabaseResult(supabaseClient.from("notifications").upsert(state.notifications.map(notificationToRow), { onConflict: "id" })) : null,
-  ]).catch((error) => showToast(`No se pudo sincronizar operacion: ${error.message || ""}`));
+  // La sincronizacion operativa ahora se hace por accion puntual.
+  // Evita upserts masivos que chocan con RLS en produccion.
 }
 
 function syncAdminStateToSupabase() {
   if (!supabaseClient || !isAdmin()) return;
-  syncFullStateToSupabase().catch((error) => showToast(`No se pudo sincronizar admin: ${error.message || ""}`));
+
+  Promise.all([
+    assertSupabaseResult(supabaseClient.from("settings").upsert(settingsToRow(state.settings), { onConflict: "id" })),
+    state.services.length ? assertSupabaseResult(supabaseClient.from("services").upsert(state.services.map(serviceToRow), { onConflict: "id" })) : null,
+    state.expenses.length ? assertSupabaseResult(supabaseClient.from("expenses").upsert(state.expenses.map(expenseToRow), { onConflict: "id" })) : null,
+  ]).catch((error) => showToast(`No se pudo sincronizar admin: ${error.message || ""}`));
 }
 
 async function persistAppointmentStatus(appointment, completion) {
@@ -2132,7 +2131,7 @@ function redeemLoyalty(uid) {
   user.courtesyWashAvailable = false;
   user.updatedAt = now;
 
-  state.loyaltyEvents.push({
+  const event = {
     id: makeId("loy"),
     userUid: user.uid,
     appointmentId: null,
@@ -2141,12 +2140,28 @@ function redeemLoyalty(uid) {
     reason: "Lavado de cortesia",
     createdBy: currentUser().uid,
     createdAt: now,
-  });
+  };
+  state.loyaltyEvents.push(event);
 
   saveStore();
-  syncOperationalStateToSupabase();
+  persistLoyaltyRedemption(user, event)
+    .catch((error) => showToast(`No se pudo guardar el canje: ${error.message || ""}`));
   showToast("Canje registrado y puntos reiniciados.");
   renderAll();
+}
+
+async function persistLoyaltyRedemption(user, event) {
+  if (!supabaseClient || !isAdmin()) return;
+
+  await assertSupabaseResult(
+    supabaseClient
+      .from("users")
+      .update(userToRow(user))
+      .eq("uid", user.uid)
+  );
+
+  const result = await supabaseClient.from("loyalty_events").insert(loyaltyEventToRow(event));
+  if (result.error && result.error.code !== "23505") throw result.error;
 }
 
 function recalculateRewardFlags() {
