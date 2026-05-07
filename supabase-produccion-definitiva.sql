@@ -9,8 +9,8 @@ create table if not exists public.settings (
   business_name text not null default 'A Todo Brillo',
   country text not null default 'AR',
   province text not null default 'Mendoza',
-  business_address text not null default 'Direccion a confirmar, Mendoza',
-  map_url text not null default '',
+  business_address text not null default '8085 Rodríguez, Luján de Cuyo, Mendoza',
+  map_url text not null default 'https://www.google.com/maps/search/?api=1&query=8085%20Rodriguez%2C%20Lujan%20de%20Cuyo%2C%20Mendoza',
   contact_phone text not null default '',
   currency text not null default 'ARS',
   locale text not null default 'es-AR',
@@ -125,8 +125,8 @@ alter table public.settings
   add column if not exists business_name text not null default 'A Todo Brillo',
   add column if not exists country text not null default 'AR',
   add column if not exists province text not null default 'Mendoza',
-  add column if not exists business_address text not null default 'Direccion a confirmar, Mendoza',
-  add column if not exists map_url text not null default '',
+  add column if not exists business_address text not null default '8085 Rodríguez, Luján de Cuyo, Mendoza',
+  add column if not exists map_url text not null default 'https://www.google.com/maps/search/?api=1&query=8085%20Rodriguez%2C%20Lujan%20de%20Cuyo%2C%20Mendoza',
   add column if not exists contact_phone text not null default '',
   add column if not exists currency text not null default 'ARS',
   add column if not exists locale text not null default 'es-AR',
@@ -232,6 +232,12 @@ create index if not exists users_phone_idx on public.users(normalized_phone);
 insert into public.settings (id)
 values ('business')
 on conflict (id) do nothing;
+
+update public.settings
+set business_address = '8085 Rodríguez, Luján de Cuyo, Mendoza',
+    map_url = coalesce(nullif(map_url, ''), 'https://www.google.com/maps/search/?api=1&query=8085%20Rodriguez%2C%20Lujan%20de%20Cuyo%2C%20Mendoza'),
+    updated_at = now()
+where id = 'business';
 
 alter table public.settings enable row level security;
 alter table public.services enable row level security;
@@ -873,7 +879,7 @@ begin
     coalesce(nullif(trim(p_business_name), ''), 'A Todo Brillo'),
     coalesce(nullif(trim(p_country), ''), 'AR'),
     coalesce(nullif(trim(p_province), ''), 'Mendoza'),
-    coalesce(nullif(trim(p_business_address), ''), 'Direccion a confirmar, Mendoza'),
+    coalesce(nullif(trim(p_business_address), ''), '8085 Rodríguez, Luján de Cuyo, Mendoza'),
     coalesce(p_map_url, ''),
     coalesce(p_contact_phone, ''),
     coalesce(nullif(trim(p_currency), ''), 'ARS'),
