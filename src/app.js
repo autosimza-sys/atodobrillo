@@ -63,8 +63,14 @@ const ui = {
 let state = loadStore();
 
 renderAll();
-initializeAuth();
-hydrateSupabaseStore();
+bootApp();
+
+async function bootApp() {
+  await initializeAuth();
+  if (!isInternalPage()) {
+    await hydrateSupabaseStore();
+  }
+}
 
 document.addEventListener("click", async (event) => {
   const actionButton = event.target.closest("[data-action]");
@@ -89,11 +95,11 @@ document.addEventListener("click", async (event) => {
     ui.editingServiceId = null;
     renderServicesAdmin();
   }
-  if (action === "toggle-service") toggleService(id);
-  if (action === "delete-service") deleteService(id);
-  if (action === "open-whatsapp") openWhatsAppForAppointment(id);
+  if (action === "toggle-service") await toggleService(id);
+  if (action === "delete-service") await deleteService(id);
+  if (action === "open-whatsapp") await openWhatsAppForAppointment(id);
   if (action === "redeem-loyalty") await redeemLoyalty(id);
-  if (action === "delete-expense") deleteExpense(id);
+  if (action === "delete-expense") await deleteExpense(id);
   if (action === "logout") await logoutStaff();
 });
 
@@ -119,15 +125,15 @@ document.addEventListener("submit", async (event) => {
   }
 
   if (event.target.id === "service-form") {
-    saveService(new FormData(event.target));
+    await saveService(new FormData(event.target));
   }
 
   if (event.target.id === "expense-form") {
-    saveExpense(new FormData(event.target));
+    await saveExpense(new FormData(event.target));
   }
 
   if (event.target.id === "settings-form") {
-    saveSettings(new FormData(event.target));
+    await saveSettings(new FormData(event.target));
   }
 
   if (event.target.id === "client-lookup-form") {
@@ -138,7 +144,7 @@ document.addEventListener("submit", async (event) => {
   }
 
   if (event.target.id === "staff-login-form") {
-    loginStaff(new FormData(event.target));
+    await loginStaff(new FormData(event.target));
   }
 });
 
@@ -389,17 +395,11 @@ async function hydrateSupabaseStore() {
   try {
     showToast("Conectando con Supabase...");
     const remoteState = await fetchSupabaseState(isInternalPage() && isStaffOrAdmin());
-    const hasRemoteData = remoteState.services.length || remoteState.users.length || remoteState.appointments.length || remoteState.expenses.length;
     ui.connectionError = false;
-
-    if (!hasRemoteData) {
-      showToast("Supabase conectado.");
-      return;
-    }
 
     state = remoteState;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    showToast("Datos cargados desde Supabase.");
+    showToast(remoteState.services.length ? "Datos cargados desde Supabase." : "Supabase conectado. Carga servicios desde el panel admin.");
     renderAll();
   } catch (error) {
     ui.connectionError = true;
@@ -459,22 +459,11 @@ async function fetchSupabaseState(includeInternal = false) {
 }
 
 async function syncFullStateToSupabase() {
-  if (!supabaseClient) return;
-
-  await assertSupabaseResult(supabaseClient.from("settings").upsert(settingsToRow(state.settings), { onConflict: "id" }));
-  if (state.services.length) await assertSupabaseResult(supabaseClient.from("services").upsert(state.services.map(serviceToRow), { onConflict: "id" }));
-  if (state.users.length) await assertSupabaseResult(supabaseClient.from("users").upsert(state.users.map(userToRow), { onConflict: "uid" }));
-  if (state.appointments.length) await assertSupabaseResult(supabaseClient.from("appointments").upsert(state.appointments.map(appointmentToRow), { onConflict: "id" }));
-  if (state.expenses.length) await assertSupabaseResult(supabaseClient.from("expenses").upsert(state.expenses.map(expenseToRow), { onConflict: "id" }));
-  if (state.loyaltyEvents.length) await assertSupabaseResult(supabaseClient.from("loyalty_events").upsert(state.loyaltyEvents.map(loyaltyEventToRow), { onConflict: "id" }));
-  if (state.notifications.length) await assertSupabaseResult(supabaseClient.from("notifications").upsert(state.notifications.map(notificationToRow), { onConflict: "id" }));
+  // Produccion usa funciones RPC por accion para evitar choques con RLS.
 }
 
 async function deleteSupabaseRow(table, idColumn, id) {
-  if (!supabaseClient) return;
-
-  const { error } = await supabaseClient.from(table).delete().eq(idColumn, id);
-  if (error) showToast(`No se pudo borrar en Supabase: ${error.message}`);
+  // Se conserva como compatibilidad, pero las bajas de produccion usan RPC.
 }
 
 async function assertSupabaseResult(request) {
@@ -498,30 +487,16 @@ async function initializeAuth() {
     return;
   }
 
-  restoreCachedStaffSession();
-  renderAll();
-
   const { data } = await supabaseClient.auth.getSession();
   await applySession(data.session);
 
-  supabaseClient.auth.onAuthStateChange(async (event, session) => {
-    if (event === "SIGNED_OUT" && !ui.manualLogout && restoreCachedStaffSession()) {
-      renderAll();
-      return;
-    }
-
+  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
     await applySession(session);
   });
 }
 
 async function applySession(session) {
   if (!session?.user) {
-    if (!ui.manualLogout && restoreCachedStaffSession()) {
-      ui.authReady = true;
-      renderAll();
-      return;
-    }
-
     ui.authUser = null;
     ui.staffProfile = null;
     ui.currentRole = "client";
@@ -718,18 +693,7 @@ async function persistPublicBooking(user, appointment) {
     };
   }
 
-  const userResult = await supabaseClient.from("users").insert(userToRow(user));
-  if (userResult.error && userResult.error.code !== "23505") throw rpcResult.error;
-
-  const appointmentResult = await supabaseClient.from("appointments").insert(appointmentToRow(appointment));
-  if (appointmentResult.error) throw rpcResult.error;
-
-  return {
-    userUid: user.uid,
-    appointmentId: appointment.id,
-    serviceName: appointment.serviceName,
-    servicePrice: appointment.servicePrice,
-  };
+  throw rpcResult.error;
 }
 
 function syncOperationalStateToSupabase() {
@@ -738,52 +702,29 @@ function syncOperationalStateToSupabase() {
 }
 
 function syncAdminStateToSupabase() {
-  if (!supabaseClient || !isAdmin()) return;
-
-  Promise.all([
-    assertSupabaseResult(supabaseClient.from("settings").upsert(settingsToRow(state.settings), { onConflict: "id" })),
-    state.services.length ? assertSupabaseResult(supabaseClient.from("services").upsert(state.services.map(serviceToRow), { onConflict: "id" })) : null,
-    state.expenses.length ? assertSupabaseResult(supabaseClient.from("expenses").upsert(state.expenses.map(expenseToRow), { onConflict: "id" })) : null,
-  ]).catch((error) => showToast(`No se pudo sincronizar admin: ${error.message || ""}`));
+  // Produccion usa funciones RPC por accion para evitar choques con RLS.
 }
 
 async function persistAppointmentStatus(appointment, completion) {
   if (!supabaseClient || !isStaffOrAdmin()) return;
 
-  await assertSupabaseResult(
-    supabaseClient
-      .from("appointments")
-      .update(appointmentToRow(appointment))
-      .eq("id", appointment.id)
-  );
+  const { error } = await supabaseClient.rpc("staff_update_appointment_status", {
+    p_appointment_id: appointment.id,
+    p_status: appointment.status,
+  });
 
-  if (completion?.user) {
-    await assertSupabaseResult(
-      supabaseClient
-        .from("users")
-        .update(userToRow(completion.user))
-        .eq("uid", completion.user.uid)
-    );
-  }
-
-  if (completion?.event) {
-    const result = await supabaseClient.from("loyalty_events").insert(loyaltyEventToRow(completion.event));
-    if (result.error && result.error.code !== "23505") throw result.error;
-  }
+  if (error) throw error;
 }
 
 async function persistWhatsappNotification(appointment, notification) {
   if (!supabaseClient || !isStaffOrAdmin()) return;
 
-  await assertSupabaseResult(
-    supabaseClient
-      .from("appointments")
-      .update(appointmentToRow(appointment))
-      .eq("id", appointment.id)
-  );
+  const { error } = await supabaseClient.rpc("staff_log_whatsapp_opened", {
+    p_appointment_id: appointment.id,
+    p_message_preview: notification.messagePreview,
+  });
 
-  const result = await supabaseClient.from("notifications").insert(notificationToRow(notification));
-  if (result.error && result.error.code !== "23505") throw result.error;
+  if (error) throw error;
 }
 
 async function lookupClientProgress() {
@@ -1844,13 +1785,14 @@ function renderServicesAdminList() {
     .join("");
 }
 
-function saveService(form) {
+async function saveService(form) {
   if (!isAdmin()) {
     showToast("Solo admin puede gestionar servicios.");
     return;
   }
 
   const now = nowIso();
+  const snapshot = JSON.parse(JSON.stringify(state));
   const payload = {
     name: String(form.get("name") || "").trim(),
     description: String(form.get("description") || "").trim(),
@@ -1869,42 +1811,114 @@ function saveService(form) {
 
   if (ui.editingServiceId) {
     const existing = state.services.find((item) => item.id === ui.editingServiceId);
+    if (!existing) {
+      showToast("No se encontro el servicio para editar.");
+      ui.editingServiceId = null;
+      renderAll();
+      return;
+    }
+
     Object.assign(existing, payload);
-    ui.editingServiceId = null;
-    showToast("Servicio actualizado.");
-  } else {
-    state.services.push({
-      id: makeId("srv"),
-      ...payload,
-      createdAt: now,
-    });
-    showToast("Servicio creado.");
+    try {
+      await persistService(existing);
+      ui.editingServiceId = null;
+      saveStore();
+      showToast("Servicio actualizado.");
+      renderAll();
+    } catch (error) {
+      state = snapshot;
+      saveStore();
+      showToast(`No se pudo guardar el servicio: ${error.message || ""}`);
+      renderAll();
+    }
+    return;
   }
 
-  saveStore();
-  syncAdminStateToSupabase();
-  renderAll();
+  const service = {
+    id: makeId("srv"),
+    ...payload,
+    createdAt: now,
+  };
+
+  state.services.push(service);
+
+  try {
+    await persistService(service);
+    ui.editingServiceId = null;
+    saveStore();
+    showToast("Servicio creado.");
+    renderAll();
+  } catch (error) {
+    state = snapshot;
+    saveStore();
+    showToast(`No se pudo crear el servicio: ${error.message || ""}`);
+    renderAll();
+  }
 }
 
-function toggleService(id) {
+async function toggleService(id) {
   const service = state.services.find((item) => item.id === id);
   if (!service) return;
+  const snapshot = JSON.parse(JSON.stringify(state));
   service.isActive = !service.isActive;
   service.updatedAt = nowIso();
-  saveStore();
-  syncAdminStateToSupabase();
-  showToast(service.isActive ? "Servicio activado." : "Servicio desactivado.");
-  renderAll();
+
+  try {
+    await persistService(service);
+    saveStore();
+    showToast(service.isActive ? "Servicio activado." : "Servicio desactivado.");
+    renderAll();
+  } catch (error) {
+    state = snapshot;
+    saveStore();
+    showToast(`No se pudo cambiar el servicio: ${error.message || ""}`);
+    renderAll();
+  }
 }
 
-function deleteService(id) {
+async function deleteService(id) {
   if (!confirm("Eliminar servicio? Los turnos historicos conservan nombre y precio.")) return;
+  const snapshot = JSON.parse(JSON.stringify(state));
   state.services = state.services.filter((item) => item.id !== id);
-  saveStore();
-  deleteSupabaseRow("services", "id", id);
-  syncAdminStateToSupabase();
-  showToast("Servicio eliminado.");
-  renderAll();
+
+  try {
+    await persistDeleteService(id);
+    saveStore();
+    showToast("Servicio eliminado.");
+    renderAll();
+  } catch (error) {
+    state = snapshot;
+    saveStore();
+    showToast(`No se pudo eliminar el servicio: ${error.message || ""}`);
+    renderAll();
+  }
+}
+
+async function persistService(service) {
+  if (!supabaseClient || !isAdmin()) return;
+
+  const { error } = await supabaseClient.rpc("admin_save_service", {
+    p_id: service.id,
+    p_name: service.name,
+    p_description: service.description,
+    p_price: service.price,
+    p_estimated_minutes: service.estimatedMinutes,
+    p_category: service.category,
+    p_is_active: service.isActive,
+    p_sort_order: service.sortOrder,
+  });
+
+  if (error) throw error;
+}
+
+async function persistDeleteService(id) {
+  if (!supabaseClient || !isAdmin()) return;
+
+  const { error } = await supabaseClient.rpc("admin_delete_service", {
+    p_id: id,
+  });
+
+  if (error) throw error;
 }
 
 function renderFinance() {
@@ -1989,7 +2003,7 @@ function renderExpenseList() {
     .join("");
 }
 
-function saveExpense(form) {
+async function saveExpense(form) {
   if (!isAdmin()) {
     showToast("Solo admin puede cargar egresos.");
     return;
@@ -2003,8 +2017,9 @@ function saveExpense(form) {
     return;
   }
 
+  const snapshot = JSON.parse(JSON.stringify(state));
   const now = nowIso();
-  state.expenses.push({
+  const expense = {
     id: makeId("exp"),
     title,
     amount,
@@ -2014,21 +2029,62 @@ function saveExpense(form) {
     createdBy: currentUser().uid,
     createdAt: now,
     updatedAt: now,
-  });
+  };
+  state.expenses.push(expense);
 
-  saveStore();
-  syncAdminStateToSupabase();
-  showToast("Egreso registrado.");
-  renderAll();
+  try {
+    await persistExpense(expense);
+    saveStore();
+    showToast("Egreso registrado.");
+    renderAll();
+  } catch (error) {
+    state = snapshot;
+    saveStore();
+    showToast(`No se pudo guardar el egreso: ${error.message || ""}`);
+    renderAll();
+  }
 }
 
-function deleteExpense(id) {
+async function deleteExpense(id) {
+  const snapshot = JSON.parse(JSON.stringify(state));
   state.expenses = state.expenses.filter((item) => item.id !== id);
-  saveStore();
-  deleteSupabaseRow("expenses", "id", id);
-  syncAdminStateToSupabase();
-  showToast("Egreso eliminado.");
-  renderAll();
+
+  try {
+    await persistDeleteExpense(id);
+    saveStore();
+    showToast("Egreso eliminado.");
+    renderAll();
+  } catch (error) {
+    state = snapshot;
+    saveStore();
+    showToast(`No se pudo eliminar el egreso: ${error.message || ""}`);
+    renderAll();
+  }
+}
+
+async function persistExpense(expense) {
+  if (!supabaseClient || !isAdmin()) return;
+
+  const { error } = await supabaseClient.rpc("admin_save_expense", {
+    p_id: expense.id,
+    p_title: expense.title,
+    p_amount: expense.amount,
+    p_category: expense.category,
+    p_expense_date: expense.expenseDate,
+    p_notes: expense.notes,
+  });
+
+  if (error) throw error;
+}
+
+async function persistDeleteExpense(id) {
+  if (!supabaseClient || !isAdmin()) return;
+
+  const { error } = await supabaseClient.rpc("admin_delete_expense", {
+    p_id: id,
+  });
+
+  if (error) throw error;
 }
 
 function renderSettings() {
@@ -2053,7 +2109,7 @@ function renderSettings() {
   `;
 }
 
-function saveSettings(form) {
+async function saveSettings(form) {
   if (!isAdmin()) {
     showToast("Solo admin puede cambiar configuracion.");
     return;
@@ -2065,6 +2121,7 @@ function saveSettings(form) {
     return;
   }
 
+  const snapshot = JSON.parse(JSON.stringify(state));
   Object.assign(state.settings, {
     businessName: String(form.get("businessName") || "A Todo Brillo").trim(),
     province: String(form.get("province") || "Mendoza").trim(),
@@ -2080,10 +2137,37 @@ function saveSettings(form) {
   });
 
   recalculateRewardFlags();
-  saveStore();
-  syncAdminStateToSupabase();
-  showToast("Configuracion guardada.");
-  renderAll();
+
+  try {
+    await persistSettings();
+    saveStore();
+    showToast("Configuracion guardada.");
+    renderAll();
+  } catch (error) {
+    state = snapshot;
+    saveStore();
+    showToast(`No se pudo guardar configuracion: ${error.message || ""}`);
+    renderAll();
+  }
+}
+
+async function persistSettings() {
+  if (!supabaseClient || !isAdmin()) return;
+
+  const { error } = await supabaseClient.rpc("admin_save_settings", {
+    p_business_name: state.settings.businessName,
+    p_country: state.settings.country || "AR",
+    p_province: state.settings.province,
+    p_business_address: state.settings.businessAddress,
+    p_map_url: state.settings.mapUrl,
+    p_contact_phone: state.settings.contactPhone,
+    p_currency: state.settings.currency,
+    p_locale: state.settings.locale,
+    p_timezone: state.settings.timezone,
+    p_loyalty_target_services: state.settings.loyaltyTargetServices,
+  });
+
+  if (error) throw error;
 }
 
 function renderLoyalty() {
@@ -2302,11 +2386,13 @@ function currentUser() {
 
 function isStaffOrAdmin() {
   const role = activeRole();
-  return ["staff", "admin"].includes(role) && Boolean(ui.authUser || ui.staffProfile || !supabaseClient);
+  if (!supabaseClient) return ["staff", "admin"].includes(role);
+  return ["staff", "admin"].includes(role) && Boolean(ui.authUser);
 }
 
 function isAdmin() {
-  return activeRole() === "admin" && Boolean(ui.authUser || ui.staffProfile || !supabaseClient);
+  if (!supabaseClient) return activeRole() === "admin";
+  return activeRole() === "admin" && Boolean(ui.authUser);
 }
 
 function isInternalPage() {
