@@ -1,5 +1,7 @@
 const STORAGE_KEY = "atodo-brillo-store-v1";
 const STAFF_SESSION_KEY = "atodo-brillo-staff-session-v1";
+const DEFAULT_BUSINESS_ADDRESS = "8085 Rodríguez, Luján de Cuyo, Mendoza";
+const DEFAULT_MAP_URL = "https://www.google.com/maps/search/?api=1&query=8085%20Rodriguez%2C%20Lujan%20de%20Cuyo%2C%20Mendoza";
 const allowedTargets = [5, 6, 7, 8, 9, 10];
 const adminEmails = ["autosimza@gmail.com"];
 
@@ -171,8 +173,8 @@ function seedStore() {
     businessName: "A Todo Brillo",
     country: "AR",
     province: "Mendoza",
-    businessAddress: "Direccion a confirmar, Mendoza",
-    mapUrl: "",
+    businessAddress: DEFAULT_BUSINESS_ADDRESS,
+    mapUrl: DEFAULT_MAP_URL,
     contactPhone: "",
     currency: "ARS",
     locale: "es-AR",
@@ -586,28 +588,30 @@ async function loginStaff(form) {
 async function logoutStaff() {
   ui.manualLogout = true;
   clearCachedStaffSession();
+  clearSupabaseAuthStorage();
+
+  ui.authUser = null;
+  ui.staffProfile = null;
+  ui.currentRole = "client";
 
   if (!supabaseClient) {
-    ui.authUser = null;
-    ui.staffProfile = null;
-    ui.currentRole = "client";
     showToast("Sesion cerrada.");
     renderAll();
     return;
   }
 
-  const { error } = await supabaseClient.auth.signOut();
-  if (error) {
-    showToast(`No se pudo cerrar sesion: ${error.message}`);
-    return;
+  try {
+    await supabaseClient.auth.signOut({ scope: "local" });
+  } catch {
+    // La sesion local ya fue limpiada arriba.
   }
 
-  ui.authUser = null;
-  ui.staffProfile = null;
-  ui.currentRole = "client";
-  await hydrateSupabaseStore();
   showToast("Sesion cerrada.");
   renderAll();
+
+  if (isInternalPage()) {
+    window.setTimeout(() => window.location.assign("./admin.html#ingreso"), 250);
+  }
 }
 
 function fallbackStaffProfile(user) {
@@ -659,6 +663,14 @@ function restoreCachedStaffSession() {
 
 function clearCachedStaffSession() {
   localStorage.removeItem(STAFF_SESSION_KEY);
+}
+
+function clearSupabaseAuthStorage() {
+  [localStorage, sessionStorage].forEach((storage) => {
+    Object.keys(storage)
+      .filter((key) => key.startsWith("sb-") && key.includes("auth-token"))
+      .forEach((key) => storage.removeItem(key));
+  });
 }
 
 async function persistPublicBooking(user, appointment) {
@@ -776,8 +788,8 @@ function settingsFromRow(row) {
     businessName: row.business_name,
     country: row.country,
     province: row.province,
-    businessAddress: row.business_address || "Direccion a confirmar, Mendoza",
-    mapUrl: row.map_url || "",
+    businessAddress: row.business_address || DEFAULT_BUSINESS_ADDRESS,
+    mapUrl: row.map_url || DEFAULT_MAP_URL,
     contactPhone: row.contact_phone || "",
     currency: row.currency,
     locale: row.locale,
@@ -798,8 +810,8 @@ function sanitizeSettings(settings) {
 
   if (!isValidLocale(clean.locale)) clean.locale = "es-AR";
   if (!clean.currency || clean.currency.length !== 3) clean.currency = "ARS";
-  clean.businessAddress = String(clean.businessAddress || "Direccion a confirmar, Mendoza");
-  clean.mapUrl = String(clean.mapUrl || "");
+  clean.businessAddress = String(clean.businessAddress || DEFAULT_BUSINESS_ADDRESS);
+  clean.mapUrl = String(clean.mapUrl || DEFAULT_MAP_URL);
   clean.contactPhone = String(clean.contactPhone || "");
   if (!allowedTargets.includes(Number(clean.loyaltyTargetServices))) clean.loyaltyTargetServices = 8;
 
@@ -1112,9 +1124,10 @@ function renderLocationCard() {
   const container = document.getElementById("location-card");
   if (!container) return;
 
-  const address = state.settings.businessAddress || "Direccion a confirmar, Mendoza";
+  const address = state.settings.businessAddress || DEFAULT_BUSINESS_ADDRESS;
   const phone = state.settings.contactPhone || "";
   const mapUrl = state.settings.mapUrl || "";
+  const whatsappUrl = businessWhatsAppUrl();
 
   container.innerHTML = `
     <div class="panel-title">
@@ -1145,8 +1158,20 @@ function renderLocationCard() {
       ` : `
         <span class="badge warn">Ubicacion pendiente de cargar</span>
       `}
+      ${whatsappUrl ? `
+        <a class="secondary-action" href="${escapeAttr(whatsappUrl)}" target="_blank" rel="noopener noreferrer">
+          <i data-lucide="message-circle"></i>
+          WhatsApp
+        </a>
+      ` : ""}
     </div>
   `;
+}
+
+function businessWhatsAppUrl(message = "Hola A Todo Brillo, quiero consultar por un turno.") {
+  const normalized = normalizePhone(state.settings.contactPhone);
+  if (normalized.length < 12) return "";
+  return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
 }
 
 function renderBooking() {
@@ -1214,7 +1239,7 @@ function renderBookingConfirmation(appointment) {
       </div>
       <div class="location-reminder">
         <i data-lucide="map-pin"></i>
-        <span>${escapeHtml(state.settings.businessAddress || "Direccion a confirmar, Mendoza")}</span>
+        <span>${escapeHtml(state.settings.businessAddress || DEFAULT_BUSINESS_ADDRESS)}</span>
       </div>
       <div class="booking-actions">
         <button class="primary-action" type="button" data-action="new-booking">Nueva reserva</button>
@@ -2095,7 +2120,7 @@ function renderSettings() {
     <div class="form-grid two">
       ${simpleInput("Nombre del negocio", "businessName", state.settings.businessName, "text", "A Todo Brillo")}
       ${simpleInput("Provincia", "province", state.settings.province, "text", "Mendoza")}
-      ${simpleInput("Direccion del lavadero", "businessAddress", state.settings.businessAddress, "text", "Ej: Carrodilla, Lujan de Cuyo, Mendoza")}
+      ${simpleInput("Direccion del lavadero", "businessAddress", state.settings.businessAddress, "text", DEFAULT_BUSINESS_ADDRESS)}
       ${simpleInput("Link de Google Maps", "mapUrl", state.settings.mapUrl, "url", "https://maps.google.com/...")}
       ${simpleInput("WhatsApp del negocio", "contactPhone", state.settings.contactPhone, "tel", "Ej: 261 555 1234")}
       ${simpleInput("Moneda", "currency", state.settings.currency, "text", "ARS")}
@@ -2104,6 +2129,12 @@ function renderSettings() {
       ${simpleSelect("Premio Club de Brillo", "loyaltyTargetServices", String(state.settings.loyaltyTargetServices), Object.fromEntries(allowedTargets.map((target) => [target, `${target} lavados`])))}
     </div>
     <div class="booking-actions">
+      ${businessWhatsAppUrl() ? `
+        <a class="secondary-action" href="${escapeAttr(businessWhatsAppUrl())}" target="_blank" rel="noopener noreferrer">
+          <i data-lucide="message-circle"></i>
+          Probar WhatsApp
+        </a>
+      ` : ""}
       <button class="primary-action" type="submit">Guardar configuracion</button>
     </div>
   `;
@@ -2125,8 +2156,8 @@ async function saveSettings(form) {
   Object.assign(state.settings, {
     businessName: String(form.get("businessName") || "A Todo Brillo").trim(),
     province: String(form.get("province") || "Mendoza").trim(),
-    businessAddress: String(form.get("businessAddress") || "Direccion a confirmar, Mendoza").trim(),
-    mapUrl: String(form.get("mapUrl") || "").trim(),
+    businessAddress: String(form.get("businessAddress") || DEFAULT_BUSINESS_ADDRESS).trim(),
+    mapUrl: String(form.get("mapUrl") || DEFAULT_MAP_URL).trim(),
     contactPhone: String(form.get("contactPhone") || "").trim(),
     currency: String(form.get("currency") || "ARS").trim().toUpperCase(),
     locale: String(form.get("locale") || "es-AR").trim(),
