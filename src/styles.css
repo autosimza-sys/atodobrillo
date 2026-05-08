@@ -45,6 +45,27 @@ body::before {
   mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.52), transparent 74%);
 }
 
+.mt-2 {
+  margin-top: 8px;
+}
+
+.mt-3 {
+  margin-top: 12px;
+}
+
+.mt-4 {
+  margin-top: 16px;
+}
+
+.text-2xl {
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.font-black {
+  font-weight: 950;
+}
+
 button,
 input,
 select,
@@ -340,14 +361,23 @@ a {
   gap: 14px;
 }
 
+.seo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+
 .benefits-grid article,
+.seo-grid article,
 .app-panel {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.88));
 }
 
-.benefits-grid article {
+.benefits-grid article,
+.seo-grid article {
   min-height: 176px;
   padding: 22px;
 }
@@ -364,7 +394,14 @@ a {
   font-weight: 950;
 }
 
+.seo-grid h3 {
+  margin: 0 0 10px;
+  font-size: 20px;
+  font-weight: 950;
+}
+
 .benefits-grid p,
+.seo-grid p,
 .section-heading p,
 .field-help,
 .muted {
@@ -421,6 +458,7 @@ a {
 
 .stepper button {
   display: grid;
+  gap: 2px;
   min-height: 52px;
   place-items: center;
   border: 1px solid var(--line);
@@ -430,6 +468,18 @@ a {
   cursor: pointer;
   font-size: 12px;
   font-weight: 900;
+}
+
+.step-number {
+  display: block;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.step-label {
+  display: block;
+  font-size: 12px;
+  line-height: 1.15;
 }
 
 .stepper button.active,
@@ -447,6 +497,10 @@ a {
 
 .form-grid.two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.md\:col-span-2 {
+  grid-column: auto;
 }
 
 .field {
@@ -890,7 +944,8 @@ a {
 
   .two-column,
   .dashboard-grid,
-  .benefits-grid {
+  .benefits-grid,
+  .seo-grid {
     grid-template-columns: 1fr;
   }
 
@@ -940,6 +995,10 @@ a {
     min-height: 42px;
   }
 
+  .step-label {
+    display: none;
+  }
+
   .card-head,
   .panel-title {
     align-items: flex-start;
@@ -949,5 +1008,11 @@ a {
   .primary-action,
   .secondary-action {
     width: 100%;
+  }
+}
+
+@media (min-width: 768px) {
+  .md\:col-span-2 {
+    grid-column: span 2 / span 2;
   }
 }

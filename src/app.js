@@ -1193,7 +1193,7 @@ function renderBooking() {
 
   if (ui.bookingConfirmed) {
     progress.innerHTML = labels
-      .map((label, index) => `<button type="button" class="done" disabled>${index + 1}. ${label}</button>`)
+      .map((label, index) => `<button type="button" class="done" disabled>${stepLabel(index + 1, label)}</button>`)
       .join("");
     form.innerHTML = renderBookingConfirmation(ui.bookingConfirmed);
     return;
@@ -1203,11 +1203,15 @@ function renderBooking() {
     .map((label, index) => {
       const step = index + 1;
       const stateClass = step === ui.bookingStep ? "active" : step < ui.bookingStep ? "done" : "";
-      return `<button type="button" class="${stateClass}" data-action="jump-booking" disabled>${step}. ${label}</button>`;
+      return `<button type="button" class="${stateClass}" data-action="jump-booking" disabled>${stepLabel(step, label)}</button>`;
     })
     .join("");
 
   form.innerHTML = `${renderBookingStep()}${renderBookingActions()}`;
+}
+
+function stepLabel(step, label) {
+  return `<span class="step-number">${step}</span><span class="step-label">${escapeHtml(label)}</span>`;
 }
 
 function renderBookingConfirmation(appointment) {
