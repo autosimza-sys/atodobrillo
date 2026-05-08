@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /clave%20sub.txt
+
+Sitemap: https://www.atodobrillo.com.ar/sitemap.xml

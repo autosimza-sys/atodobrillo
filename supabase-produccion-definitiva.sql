@@ -548,18 +548,13 @@ begin
     and s.is_active = true
   limit 1;
 
-  if v_service.id is not null then
-    v_service_id := v_service.id;
-    v_service_name := v_service.name;
-    v_service_price := v_service.price;
-  else
-    v_service_name := coalesce(nullif(trim(p_service_name), ''), 'Servicio');
-    v_service_price := greatest(coalesce(p_service_price, 0), 0);
-  end if;
-
-  if v_service_price <= 0 then
+  if v_service.id is null or coalesce(v_service.price, 0) <= 0 then
     raise exception 'Servicio no disponible';
   end if;
+
+  v_service_id := v_service.id;
+  v_service_name := v_service.name;
+  v_service_price := v_service.price;
 
   select u.uid
   into v_user_uid

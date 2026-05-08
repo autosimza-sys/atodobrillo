@@ -3,12 +3,50 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>A Todo Brillo - Reservas de detailing</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <title>A Todo Brillo - Detailing y lavadero premium en Mendoza</title>
+    <meta name="description" content="A Todo Brillo es un lavadero y centro de detailing premium en Lujan de Cuyo, Mendoza. Reserva lavado premium, interior, pulido y proteccion UV online." />
+    <meta name="keywords" content="detailing Mendoza, lavadero Mendoza, lavado premium Mendoza, estetica automotriz Mendoza, lavado de autos Lujan de Cuyo, detailing Lujan de Cuyo, pulido de autos Mendoza, limpieza interior auto Mendoza, proteccion UV vehiculo, A Todo Brillo" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://www.atodobrillo.com.ar/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="es_AR" />
+    <meta property="og:site_name" content="A Todo Brillo" />
+    <meta property="og:title" content="A Todo Brillo - Detailing premium en Mendoza" />
+    <meta property="og:description" content="Reserva online tu lavado premium, detailing interior, pulido y proteccion para vehiculos en Lujan de Cuyo, Mendoza." />
+    <meta property="og:url" content="https://www.atodobrillo.com.ar/" />
+    <meta property="og:image" content="https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#0a0c10" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": ["LocalBusiness", "AutoWash"],
+        "@id": "https://www.atodobrillo.com.ar/#negocio",
+        "name": "A Todo Brillo",
+        "url": "https://www.atodobrillo.com.ar/",
+        "image": "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80",
+        "description": "Lavadero y centro de detailing premium en Lujan de Cuyo, Mendoza. Lavado premium, limpieza interior, pulido y proteccion UV para vehiculos.",
+        "telephone": "+542614680511",
+        "priceRange": "$$",
+        "address": {
+          "@type": "PostalAddress",
+          "streetAddress": "8085 Rodriguez",
+          "addressLocality": "Lujan de Cuyo",
+          "addressRegion": "Mendoza",
+          "addressCountry": "AR"
+        },
+        "areaServed": ["Mendoza", "Lujan de Cuyo", "Godoy Cruz", "Chacras de Coria"],
+        "makesOffer": [
+          { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Lavado premium de autos" } },
+          { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Detailing interior" } },
+          { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Pulido y proteccion UV" } }
+        ]
+      }
+    </script>
+    <script src="./src/vendor/lucide.js?v=20260508-1"></script>
+    <script src="./src/vendor/supabase-js.js?v=20260508-1"></script>
     <script src="./src/supabase-config.js"></script>
-    <link rel="stylesheet" href="./src/styles.css?v=20260506-10" />
+    <link rel="stylesheet" href="./src/styles.css?v=20260508-1" />
   </head>
   <body>
     <header class="topbar client-topbar">
@@ -21,6 +59,7 @@
       </a>
 
       <nav class="desktop-nav" aria-label="Principal">
+        <a href="#servicios">Servicios</a>
         <a href="#reserva">Reservar</a>
         <a href="#ubicacion">Ubicacion</a>
         <a href="#club">Club de Brillo</a>
@@ -81,6 +120,29 @@
         </article>
       </section>
 
+      <section id="servicios" class="section-wrap seo-section">
+        <div class="section-heading wide">
+          <p class="eyebrow">Servicios de detailing</p>
+          <h2>Lavado premium y estetica automotriz en Mendoza</h2>
+          <p>A Todo Brillo trabaja con productos seguros para pintura, limpieza interior, cuidado de llantas, pulido y proteccion para autos, camionetas y vehiculos de uso diario.</p>
+        </div>
+
+        <div class="seo-grid">
+          <article>
+            <h3>Lavado premium en Lujan de Cuyo</h3>
+            <p>Turnos rapidos para lavado exterior, secado tecnico, limpieza de llantas y terminacion cuidada.</p>
+          </article>
+          <article>
+            <h3>Detailing interior</h3>
+            <p>Aspirado, plasticos, tapizados y sanitizacion para recuperar comodidad y presencia dentro del vehiculo.</p>
+          </article>
+          <article>
+            <h3>Pulido y proteccion</h3>
+            <p>Correccion ligera, realce de brillo y proteccion UV pensada para el sol y el clima de Mendoza.</p>
+          </article>
+        </div>
+      </section>
+
       <section id="ubicacion" class="section-wrap two-column">
         <div class="section-heading">
           <p class="eyebrow">Lavadero</p>
@@ -132,6 +194,6 @@
       <a href="#reserva">Reservar turno</a>
     </footer>
 
-    <script src="./src/app.js?v=20260506-10"></script>
+    <script src="./src/app.js?v=20260508-1"></script>
   </body>
 </html>
